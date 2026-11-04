@@ -241,7 +241,7 @@ export function makeBladeMaterial(original, uniforms, raw) {
 
 export function makeOreMaterial(original, uniforms) {
   const material = new T.MeshStandardMaterial({
-    color: 0x928a7f, map: original?.map || null, roughness: .87, metalness: .14, envMapIntensity: .78,
+    color: 0x928a7f, map: original?.map || null, roughness: .91, metalness: .08, envMapIntensity: .57, flatShading: true,
   });
   material.customProgramCacheKey = () => 'blade-lab-stone-strata-3';
   material.onBeforeCompile = shader => {
@@ -285,14 +285,14 @@ export function makeOreMaterial(original, uniforms) {
         base += smoothstep(.987,.998,grains) * .095;
       }
       float glint = smoothstep(.968,.999,grains) * oreLuster * vein;
-      float metal = clamp(showMetal*.74 + glint*.7,0.,.88);
-      diffuseColor.rgb = mix(base,oreTint*(.41+.40*grain)+vec3(.085),metal);
-      diffuseColor.rgb += oreTint*glint*.20;
+      float metal = clamp(showMetal*.66 + glint*.64,0.,.78);
+      diffuseColor.rgb = mix(base,oreTint*(.20+.31*grain)+vec3(.026),metal*.77);
+      diffuseColor.rgb += oreTint*glint*.14;
       diffuseColor.rgb *= 1. - fissure*(.16+.28*oreFlaw);
-      diffuseColor.rgb *= .80 + .22*grain;
+      diffuseColor.rgb *= .70 + .19*grain;
     `).replace('#include <roughnessmap_fragment>', `
-      float roughnessFactor = clamp(.91 - metal*.53 + fissure*.16 + porous*.08 - glint*.16,.25,.99);
-    `).replace('#include <metalnessmap_fragment>', 'float metalnessFactor = mix(.08,.78,metal);')
+      float roughnessFactor = clamp(.94 - metal*.37 + fissure*.11 + porous*.09 - glint*.14,.38,.99);
+    `).replace('#include <metalnessmap_fragment>', 'float metalnessFactor = mix(.05,.64,metal);')
       .replace('#include <emissivemap_fragment>', `
         totalEmissiveRadiance += oreTint * (glint*.055 + oreReveal*oreGrade*metal*.095)
           + vec3(.91,.15,.022)*oreHeat*oreHeat*(.09+jagged*.62);
