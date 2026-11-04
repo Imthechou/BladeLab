@@ -1,7 +1,7 @@
 import {
-  STORAGE_KEY, MAX_STRIKES, REFRESH_PRICE, PHASES, GRADES, MODELS, LOOKS, FITS, STAT_NAMES,
-  freshSave, restart, offers, familyOf, buyOre, refine, fractureRisk, strike, finishForge,
-  fitOptions, refreshFittings, appraise, signature, rngFor,
+  STORAGE_KEY, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, MODELS, LOOKS, FITS, STAT_NAMES,
+  freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, fractureRisk, strike, finishForge,
+  fitOptions, refreshFittings, appraise, signature,
 } from './forge.js';
 import { ForgeStage } from './stage.js';
 import { ForgeSound } from './sound.js';
@@ -25,6 +25,7 @@ let stage;
 let busy = false;
 let queuedHit;
 let queuedStop = false;
+let resultPause = false;
 let heatInput;
 let drag;
 let trayKey;
@@ -33,9 +34,7 @@ let storageFailed = false;
 
 function restore() {
   try {
-    const data = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (data?.version === 1 && Number.isFinite(data.credits) && Array.isArray(data.collection) &&
-      [...PHASES, 'reveal', 'broken'].includes(data.run?.phase) && data.run.skin?.levels) return data;
+    return migrateSave(JSON.parse(localStorage.getItem(STORAGE_KEY))) || freshSave();
   } catch {}
   return freshSave();
 }
@@ -76,6 +75,8 @@ function render() {
   const ore = phase === 'ore' ? offers(run)[run.selected] : run.ore;
   const fit = FITS.find(item => item.id === run.fit);
   stageBox.dataset.mode = phase;
+  get('ore-nav').hidden = phase !== 'ore';
+  get('ore-position').textContent = '第 ' + (run.batch + 1) + ' 批 · ' + (run.selected + 1) + ' / ' + LOT_SIZE;
   get('steps').innerHTML = stepNames.map((label, n) => `<div class="step ${n === idx ? 'current' : n < idx ? 'past' : ''}" ${n === idx ? 'aria-current="step"' : ''}><i>0${n + 1}</i>${label}</div>`).join('');
   get('credits').textContent = save.credits;
   get('stage-code').textContent = 'STATION 0' + (idx + 1);
@@ -83,7 +84,7 @@ function render() {
   const status = { ore: '原石在台', reveal: '已开料', refine: '炉温实时', forge: '可自由落锤', fit: '试装预览', appraise: '成品已入藏', broken: '炉次结束' };
   get('stage-state').textContent = webglError ? '3D 暂不可用' : status[phase];
   const hints = {
-    ore: '拖动原石查看石皮', reveal: '拖动查看矿脉断面', refine: '松手锁定温度',
+    ore: '左右翻料 · 拖动转石', reveal: '拖动查看矿脉断面', refine: '按住鼓风 · 松手散热',
     forge: matchMedia('(pointer: coarse)').matches ? '轻点刀身 · 落点影响出纹' : '直接轻点刀身 · 空格落锤', fit: '拖动转刀，比较装配',
     appraise: '拖动检视成刀', broken: '保留本次锻打记录',
   };
@@ -92,25 +93,38 @@ function render() {
     const family = familyOf(ore.family);
     title('01 / ROUGH STOCK', '翻石见钢', '转动原石，看一眼裂口和露色。只带走一块，切开才知道内里。');
     readout.innerHTML = info('LOT ' + ore.number + ' / ' + clues[ore.clue], family.name, family.hint, ore.price + ' CR');
-    actions.innerHTML = button('buy', '开这块 · ' + ore.price + ' CR', { off: ore.price > save.credits }) +
-      button('next-batch', '看看下一批', { kind: 'secondary', off: run.batch === 2 }) +
-      `<span class="action-note">${ore.price > save.credits ? '信用点不足，可以看看本批最低价料。' : '批次 ' + (run.batch + 1) + ' / 3 · 换批免费'}</span>`;
+    actions.innerHTML = button('buy', '开 ' + ore.number + ' 号 · ' + ore.price + ' CR', { off: ore.price > save.credits }) +
+      button('next-batch', run.batch === BATCHES - 1 ? '已到最后一批' : '换一批原石', { kind: 'secondary', off: run.batch === BATCHES - 1 }) +
+      `<span class="action-note">${ore.price > save.credits ? '信用点不足，左右看看本批工坊料。' : '批次 ' + (run.batch + 1) + ' / ' + BATCHES + ' · 换批免费'}</span>`;
   } else if (phase === 'reveal') {
-    title('01 / CUT OPEN', GRADES[ore.grade] + '原料', familyOf(ore.family).name + '的内层已经打开，矿脉会影响第一道刀纹。');
-    readout.innerHTML = info('LOT ' + ore.number + ' / 已开料', ['细夹杂，纹路淡', '矿脉清晰，钢质稳定', '连贯矿脉，内层稀质'][ore.grade], '', '−' + ore.price + ' CR');
+    const family = familyOf(ore.family);
+    title('01 / CUT OPEN', family.name + ' · ' + GRADES[ore.grade], '翻看剖面，矿脉会影响第一道刀纹和膜层。');
+    readout.innerHTML = `<div class="info-block ore-report">
+      <div class="info-line"><small>开料单 · LOT ${ore.number}</small><b class="readout-number">−${ore.price} CR</b></div>
+      <div class="report-row"><span>纯净度</span><b id="ore-purity">${ore.purity}</b><small>${ore.purity >= 73 ? '反射较整齐' : '精炼可减少夹杂'}</small></div>
+      <div class="report-row"><span>稳定性</span><b id="ore-stability">${stabilityOf(ore.stability)}</b><small>影响中段断率</small></div>
+      <div class="report-vein"><i class="vein-sample" style="--vein:${family.color};--vein-dark:${family.dark}"></i><span><small>矿脉倾向</small><strong>${LOOKS.pattern[family.pattern]} · ${LOOKS.film[family.film]}</strong></span></div>
+    </div>`;
     actions.innerHTML = button('to-refine', '送进炉口');
   } else if (phase === 'refine') {
-    title('02 / HEAT CONTROL', '控住火候', '按住鼓风，把热度推到浅绿区再松手。温度越贴近中心，后面越稳。');
-    readout.innerHTML = `<div class="info-block temperature"><div class="info-line"><small>目标温区 62–79</small><b class="readout-number" id="heat-number">0°</b></div><div class="thermo" role="progressbar" aria-label="炉温" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="thermo"><i class="thermo-fill" id="heat-fill"></i><i class="thermo-range"></i></div></div>`;
-    actions.innerHTML = button('heat', '按住升温 · 松手进砧', { id: 'heat-button' });
+    title('02 / HEAT CONTROL', '控住火候', '把原石熔化，再让熔球尽量留在绿区。温度升得太快就松手。');
+    readout.innerHTML = `<div class="info-block temperature">
+      <div class="info-line"><strong id="heat-step">原石升温</strong><b class="readout-number" id="heat-number">35°</b></div>
+      <div class="thermo" role="progressbar" aria-label="炉温" aria-valuemin="0" aria-valuemax="100" aria-valuenow="35" id="thermo"><i class="thermo-fill" id="heat-fill"></i><i class="thermo-range"></i><i class="thermo-danger"></i></div>
+      <div class="info-line"><small>稳温累计</small><b class="readout-number" id="heat-stable">0.0 / 3.0 秒</b></div>
+      <div class="risk-bar heat-progress"><span id="heat-progress"></span></div>
+      <small id="heat-note">先把原石加热到 65°</small>
+    </div>`;
+    actions.innerHTML = button('heat', '按住鼓风 · 松手散热', { id: 'heat-button' });
+    drawHeat();
   } else if (phase === 'forge') {
     const risk = fractureRisk(run);
     title('03 / THE ANVIL', '下一锤，怎么打？', run.hits ? '在刀腹找纹，在刃侧找光。喜欢眼前这把刀，就可以收锤。' : '直接点刀胚。刀腹、刃侧和刀尖，能敲出不同方向的变化。');
-    readout.innerHTML = `<div class="info-block"><div class="risk-line"><small>下一锤断率</small><strong class="risk-value ${risk >= .075 ? 'alert' : ''}" id="risk">${fmt(risk)}</strong></div><div class="risk-bar"><span style="width:${Math.min(100, risk / .30 * 100)}%"></span></div><div class="info-line"><small>${MODELS[run.model]} · 纯净度 ${run.purity}%</small><b class="readout-number" id="hit-count">${run.hits}/${MAX_STRIKES}</b></div></div>${lookChips(run)}`;
+    readout.innerHTML = `<div class="info-block"><div class="risk-line"><small>下一锤断率</small><strong class="risk-value ${risk >= .075 ? 'alert' : ''}" id="risk">${fmt(risk)}</strong></div><div class="risk-bar"><span style="width:${risk / .9 * 100}%"></span></div><div class="info-line"><small>${MODELS[run.model]} · 纯净 ${run.purity} · ${stabilityOf(run.stability)}</small><b class="readout-number" id="hit-count">${run.hits} 锤</b></div></div>${lookChips(run)}`;
     actions.innerHTML = button('finish', '收锤 · 保住这一把', { off: run.hits < 6 }) +
       `<span class="action-note">${run.hits < 6 ? '第 6 锤后可收锤 · 前六锤稳定' : '收锤后直接进入装配'}</span>`;
   } else if (phase === 'fit') {
-    title('04 / FITTINGS', '挑一套配件', '三套配件各有取向。点选时，刀具会立即换上整套外观。');
+    title('04 / FITTINGS', '挑一套配件', '点选在同一机位试装，再点已选的一套可恢复原钢。');
     readout.innerHTML = fit ? info('当前试装', fit.name, fit.parts) : info('锻打完成', MODELS[run.model], '已经保留 ' + run.hits + ' 锤的结果。');
     actions.innerHTML = button('appraise', '确认装配 · 鉴定', { off: !fit }) +
       button('refresh', run.refreshed ? '本炉已刷新' : '刷新一轮 · ' + REFRESH_PRICE + ' CR', { kind: 'secondary', off: run.refreshed || save.credits < REFRESH_PRICE });
@@ -125,85 +139,29 @@ function render() {
     readout.innerHTML = info('断裂记录', '第 ' + run.hits + ' 锤 · ' + fmt(run.last.risk), '本炉开料已消耗 ' + ore.price + ' 信用点。');
     actions.innerHTML = button('restart', '再开一炉');
   }
-  renderTray(run, ore, fit);
+  renderTray(run, fit);
   stage?.sync(run, ore, fit);
 }
 
-function renderTray(run, ore, fit) {
+function renderTray(run, fit) {
   const { phase } = run;
   const key = [phase, run.batch, run.selected, run.refreshed, run.fit, phase === 'forge' && run.last?.hit].join('|');
   if (key === trayKey) return;
   trayKey = key;
   if (phase === 'ore') {
-    const scroll = tray.querySelector('.ore-grid')?.scrollLeft || 0;
-    const stones = offers(run);
-    tray.innerHTML = `<div class="tray-head"><h2>本批原石</h2><small>BATCH 0${run.batch + 1} / 03</small></div><div class="ore-grid">${stones.map((stone, i) =>
-      `<button type="button" class="ore-card" data-action="select-ore" data-index="${i}" aria-pressed="${i === run.selected}"><span class="lot"><span>LOT ${stone.number}</span><span class="price">${stone.price} CR</span></span><canvas width="184" height="91" aria-hidden="true"></canvas><b>${familyOf(stone.family).name}</b><small>${clues[stone.clue]}</small></button>`).join('')}</div>`;
-    tray.querySelector('.ore-grid').scrollLeft = scroll;
-    tray.querySelectorAll('canvas').forEach((thumb, i) => paintStone(thumb, stones[i]));
+    tray.replaceChildren();
   } else if (phase === 'fit') {
-    tray.innerHTML = `<div class="tray-head"><h2>挑选配件</h2><small>FITTING TRAY / ${run.refreshed ? '02' : '01'}</small></div><div class="fit-grid">${fitOptions(run).map(item => `<button type="button" class="fit-card" data-action="select-fit" data-id="${item.id}" aria-pressed="${fit?.id === item.id}"><span class="fit-colors"><i style="--sample:${item.color}"></i><i style="--sample:${item.accent}"></i></span><b>${item.name}</b><small>${item.parts}</small><small class="fit-stats">${item.delta.map((n, i) => n >= 4 ? STAT_NAMES[i] + ' +' + n : '').filter(Boolean).join(' · ')}</small></button>`).join('')}</div>`;
+    tray.innerHTML = `<div class="tray-head"><h2>挑选配件</h2><small>FITTING TRAY / ${run.refreshed ? '02' : '01'}</small></div><div class="fit-grid">${fitOptions(run).map(item => `<button type="button" class="fit-card" data-action="select-fit" data-id="${item.id}" aria-pressed="${fit?.id === item.id}"><span class="fit-colors"><i style="--sample:${item.color}"></i><i style="--sample:${item.accent}"></i><small>${item.role}</small></span><b>${item.name}</b><small>${item.parts}</small><small class="fit-stats">${item.delta.map((n, i) => n ? STAT_NAMES[i] + ' ' + (n > 0 ? '+' : '−') + Math.abs(n) : '').filter(Boolean).join(' · ')}</small></button>`).join('')}</div>`;
   } else {
     const note = {
       reveal: ['矿石已切开', '工艺倾向来自这块矿。'],
-      refine: ['炉温提示', '温度落在绿色区时松手。'],
-      forge: [run.last ? (run.last.fusion || run.last.label) : '铁砧已就位', run.last ? '最近一锤 · ' + String(run.hits).padStart(2, '0') : '刀腹偏纹 · 刃侧偏光 · 刀尖易显异变'],
+      refine: ['炉温提示', '绿区累计时间，过热则减少成坯品质。'],
+      forge: [run.last ? (run.last.fusion || run.last.label) : '铁砧已就位', run.last ? '最近一锤 · ' + String(run.hits).padStart(2, '0') : '刀腹偏纹 · 刃侧偏膜 · 刀尖偏特效'],
       appraise: ['本地藏刀记录', '这一炉的刀面和装配已留档。'],
       broken: ['钢料损失', '连续失手后，最低价工坊矿仍可用。'],
     }[phase];
     tray.innerHTML = `<div class="brief"><b>${note[0]}</b><span>${note[1]}</span></div>`;
   }
-}
-
-function paintStone(canvas, ore) {
-  const ctx = canvas.getContext('2d');
-  const family = familyOf(ore.family);
-  const roll = rngFor(ore.figure, 'thumb');
-  const outer = [];
-  ctx.translate(92, 48);
-  const shadow = ctx.createRadialGradient(0, 27, 0, 0, 27, 48);
-  shadow.addColorStop(0, '#070607d9');
-  shadow.addColorStop(1, '#07060700');
-  ctx.fillStyle = shadow;
-  ctx.scale(1, .83);
-  ctx.fillRect(-54, -14, 108, 66);
-  const twist = .3 + roll();
-  const scale = .8 + roll() * .19;
-  for (let i = 0; i < 9; i++) {
-    const a = i / 9 * Math.PI * 2 + twist;
-    const radius = (30 + roll() * 13) * scale;
-    outer.push([Math.cos(a) * radius * (1.15 + ore.clue * .05), Math.sin(a) * radius]);
-  }
-  ctx.beginPath();
-  outer.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
-  ctx.closePath();
-  ctx.fillStyle = family.dark;
-  ctx.fill();
-  ctx.save();
-  ctx.clip();
-  const center = [-9 + roll() * 20, -7 + roll() * 13];
-  for (let i = 0; i < outer.length; i++) {
-    const a = outer[i], b = outer[(i + 1) % outer.length];
-    const brightness = Math.round(18 + 51 * roll() + (i > 4 ? 12 : 0));
-    ctx.beginPath();
-    ctx.moveTo(...center);
-    ctx.lineTo(...a);
-    ctx.lineTo(...b);
-    ctx.closePath();
-    ctx.fillStyle = `rgb(${brightness + 6} ${brightness + 3} ${brightness} / .78)`;
-    ctx.fill();
-  }
-  for (let i = 0; i < 4 + ore.clue; i++) {
-    const y = -24 + i * 8 + roll() * 4;
-    ctx.beginPath();
-    ctx.moveTo(-53, y);
-    ctx.bezierCurveTo(-13, y + 24 * roll(), 9, y - 20 * roll(), 55, y - 12);
-    ctx.strokeStyle = family.color;
-    ctx.globalAlpha = .15 + roll() * (ore.clue ? .53 : .31);
-    ctx.lineWidth = .6 + roll() * 1.65;
-    ctx.stroke();
-  }
-  ctx.restore();
 }
 
 function say(text, type = '') {
@@ -214,59 +172,122 @@ function say(text, type = '') {
   get('announcer').textContent = text;
 }
 
+function drawHeat() {
+  const heat = save.run.refining;
+  const thermo = get('thermo');
+  if (!heat || !thermo) return;
+  const temperature = Math.round(heat.temperature);
+  const green = heat.step === 'molten' && temperature >= HEAT.lower && temperature <= HEAT.upper;
+  const danger = heat.step === 'molten' && temperature >= HEAT.danger;
+  get('heat-step').textContent = { ore: '原石升温', molten: '熔球稳温', cast: '浇注成坯' }[heat.step];
+  get('heat-number').textContent = temperature + '°';
+  get('heat-fill').style.width = temperature + '%';
+  get('heat-stable').textContent = heat.stable.toFixed(1) + ' / 3.0 秒';
+  get('heat-progress').style.width = Math.min(100, heat.stable / HEAT.good * 100) + '%';
+  get('heat-note').textContent = heat.step === 'ore' ? '先把原石加热到 65°' : heat.step === 'cast' ? '熔钢入模，稍候冷却' :
+    danger ? '过热 · 松手散热' : (green ? '绿区内正在排渣' : '稳在 65–78°') + ' · 剩 ' + Math.max(0, HEAT.window - heat.elapsed).toFixed(1) + ' 秒';
+  thermo.setAttribute('aria-valuenow', temperature);
+  stageBox.dataset.heat = heat.step;
+  stageBox.dataset.danger = String(danger);
+  const button = get('heat-button');
+  button.disabled = heat.step === 'cast';
+  button.classList.toggle('heating', Boolean(heatInput?.blowing));
+  stage?.setHeat(heat);
+  if (heatInput) {
+    if (green && !heatInput.green && performance.now() - (heatInput.lastCue ?? 0) > 450) {
+      sound.play('heat');
+      heatInput.lastCue = performance.now();
+    }
+    heatInput.green = green;
+  }
+}
+
+function heatFrame(now) {
+  if (!heatInput || save.run.phase !== 'refine') return;
+  const previous = heatInput.now;
+  heatInput.now = now;
+  if (!document.hidden) {
+    const run = save.run;
+    const before = run.refining.step;
+    let remaining = Math.min(.18, Math.max(0, (now - previous) / 1000));
+    while (remaining > 0 && run.phase === 'refine') {
+      const frame = Math.min(remaining, 1 / 60);
+      advanceHeat(run, frame, heatInput.blowing);
+      remaining -= frame;
+    }
+    if (run.phase === 'forge') {
+      heatInput = null;
+      persist();
+      render();
+      const label = { good: '精炼良好', fair: '精炼合格', failed: '火候失控' }[run.refinement.result];
+      const difference = run.purity - run.ore.purity;
+      const result = label + ' · 纯净 ' + (difference < 0 ? '−' : '+') + Math.abs(difference);
+      sound.play(run.refinement.result === 'failed' ? 'scar' : 'cast');
+      say(result, run.refinement.result === 'failed' ? 'scar' : 'surge');
+      return;
+    }
+    if (before !== run.refining.step) {
+      stage?.sync(run, run.ore, null);
+      sound.play(run.refining.step === 'molten' ? 'melt' : 'cast');
+    }
+    if (now - heatInput.saved > 450 || before !== run.refining.step) {
+      persist();
+      heatInput.saved = now;
+    }
+    drawHeat();
+  }
+  requestAnimationFrame(heatFrame);
+}
+
+function startHeat(blowing) {
+  if (save.run.phase !== 'refine' || save.run.refining.step === 'cast' && blowing) return;
+  if (!heatInput) {
+    heatInput = { now: performance.now(), saved: 0, blowing };
+    requestAnimationFrame(heatFrame);
+  }
+  heatInput.blowing = blowing;
+  drawHeat();
+}
+
 function charge() {
-  if (save.run.phase !== 'refine' || heatInput) return;
   sound.unlock();
-  const start = performance.now();
-  heatInput = { start, value: 0 };
-  get('heat-button').classList.add('heating');
-  const cycle = now => {
-    if (!heatInput || heatInput.start !== start) return;
-    const elapsed = now - start;
-    const value = Math.min(100, elapsed / 21);
-    heatInput.value = value;
-    get('heat-number').textContent = Math.round(value) + '°';
-    get('heat-fill').style.width = value + '%';
-    get('thermo').setAttribute('aria-valuenow', Math.round(value));
-    if (stage) stage.heat = value / 100;
-    if (elapsed >= 2650) releaseHeat();
-    else requestAnimationFrame(cycle);
-  };
-  requestAnimationFrame(cycle);
+  sound.prepare();
+  startHeat(true);
 }
 
 function releaseHeat() {
   if (!heatInput) return;
-  const value = Math.min(100, (performance.now() - heatInput.start) / 21);
-  heatInput = null;
-  if (refine(save.run, value)) {
-    persist();
-    sound.play(value >= 62 && value <= 79 ? 'surge' : 'polish');
-    render();
-    say('纯净度 ' + save.run.purity + '%', value >= 62 && value <= 79 ? 'surge' : '');
-  }
+  heatInput.blowing = false;
+  drawHeat();
 }
 
 function hitBlade(hit) {
   if (!hit || save.run.phase !== 'forge' || queuedStop) return;
   if (busy) {
-    if (stage.blow?.landed) queuedHit = hit;
+    if (stage.blow?.landed && !resultPause) queuedHit = hit;
     return;
   }
   sound.unlock();
-  const result = strike(save.run, hit.zone);
+  const result = strike(save.run, hit.zone, hit.position);
   if (!result) return;
   busy = true;
   persist();
-  stage.swing(hit, () => {
-    sound.impact(result);
-    render();
+  resultPause = result.notable;
+  sound.play('swish');
+  stage.swing(hit, result, () => {
+    if (result.notable || result.type === 'break') queuedHit = null;
+    sound.impact(result, save.run.purity);
     stage.impact(hit, result);
+    render();
+    if (save.run.phase === 'forge' && [.10, .25, .50].some(level => result.risk < level && fractureRisk(save.run) >= level)) {
+      sound.play('tension', 1, .12);
+    }
     if (result.type === 'break' || result.type === 'scar' || result.fusion || result.change) {
       say(result.fusion || result.label, result.fusion ? 'surge' : result.type);
     }
   }, () => {
     busy = false;
+    resultPause = false;
     const next = queuedHit;
     queuedHit = null;
     if (queuedStop) {
@@ -295,26 +316,25 @@ document.addEventListener('click', event => {
     return;
   }
   sound.unlock();
-  const { action, index, id } = control.dataset;
+  const { action, id } = control.dataset;
   const run = save.run;
   let message;
-  if (action === 'select-ore' && run.phase === 'ore') {
-    run.selected = Number(index);
-  } else if (action === 'next-batch' && run.phase === 'ore' && run.batch < 2) {
+  if (['ore-prev', 'ore-next'].includes(action) && run.phase === 'ore') {
+    run.selected = (run.selected + (action === 'ore-next' ? 1 : LOT_SIZE - 1)) % LOT_SIZE;
+  } else if (action === 'next-batch' && run.phase === 'ore' && run.batch < BATCHES - 1) {
     run.batch++;
     run.selected = 0;
-    tray.querySelector('.ore-grid').scrollLeft = 0;
   } else if (action === 'buy' && buyOre(save)) {
     sound.play('ore');
     message = GRADES[run.ore.grade] + '原料';
     stage?.reveal();
-  } else if (action === 'to-refine' && run.phase === 'reveal') {
-    run.phase = 'refine';
+  } else if (action === 'to-refine' && beginRefining(run)) {
+    sound.prepare();
   } else if (action === 'finish') {
     closeAnvil();
     return;
   } else if (action === 'select-fit' && run.phase === 'fit' && fitOptions(run).some(item => item.id === id)) {
-    run.fit = id;
+    run.fit = run.fit === id ? null : id;
   } else if (action === 'refresh' && refreshFittings(save)) {
     sound.play('polish');
   } else if (action === 'appraise' && appraise(save)) {
@@ -326,7 +346,7 @@ document.addEventListener('click', event => {
   persist();
   render();
   if (message) say(message, 'surge');
-  if (action === 'select-ore' || action === 'select-fit') tray.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
+  if (action === 'select-fit') tray.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
 });
 
 document.addEventListener('pointerdown', event => {
@@ -339,12 +359,18 @@ document.addEventListener('pointerup', event => {
   if (event.isPrimary && heatInput && event.target.id === 'heat-button') releaseHeat();
 });
 document.addEventListener('pointercancel', event => {
-  if (event.target.id === 'heat-button' && heatInput) {
-    heatInput = null;
-    if (stage) stage.heat = 0;
-    render();
+  if (event.target.id === 'heat-button') releaseHeat();
+});
+document.addEventListener('lostpointercapture', event => {
+  if (event.target.id === 'heat-button') releaseHeat();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && heatInput) {
+    releaseHeat();
+    persist();
   }
 });
+window.addEventListener('blur', releaseHeat);
 document.addEventListener('keydown', event => {
   if (![' ', 'Enter'].includes(event.key) || event.repeat || get('vault').open) return;
   if (event.target.id === 'heat-button') {
@@ -402,3 +428,4 @@ try {
   showError(error);
 }
 render();
+if (save.run.phase === 'refine' && (save.run.refining.elapsed > 0 || save.run.refining.step !== 'ore')) startHeat(false);

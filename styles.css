@@ -101,23 +101,34 @@ button, a { touch-action: manipulation; }
 .temperature { display: grid; gap: 8px; }
 .thermo { position: relative; height: 13px; border: 1px solid #49382f; border-radius: 5px; overflow: hidden; background: #251d19; }
 .thermo-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, #a04f3a, #fd9753 60%, #ffc58a); }
-.thermo-range { position: absolute; inset: 0 auto 0 62%; width: 17%; background: #9be09f20; border-inline: 2px solid #aed3a0; }
+.thermo-range { position: absolute; inset: 0 auto 0 65%; width: 13%; background: #9be09f20; border-inline: 2px solid #aed3a0; }
+.thermo-danger { position: absolute; inset: 0 0 0 86%; background: #ff4d471e; border-left: 2px solid #f2796c; }
+.heat-progress span { background: #a8ce94; }
+.stage[data-danger="true"][data-mode="refine"] { border-color: #df6653; }
 #heat-button { touch-action: none; user-select: none; }
 #heat-button.heating { background: #f7d0a2; }
 .tray { margin-top: 20px; }
 .tray-head { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 9px; }
 .tray-head h2 { margin: 0; font-size: 16px; letter-spacing: .02em; }
 .tray-head small { color: var(--muted); font: 10px var(--mono); }
-.ore-grid, .fit-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
-.fit-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.ore-card, .fit-card { position: relative; display: block; min-width: 0; width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px 10px; background: linear-gradient(155deg, #282522, #1d1c1a 65%); overflow: hidden; }
-.ore-card:hover, .fit-card:hover { border-color: #8c6246; }
-.ore-card[aria-pressed="true"], .fit-card[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px #a65d39, 0 2px 18px #d08a3c15; background: linear-gradient(155deg, #36271f, #25201b 75%); }
-.ore-card canvas { display: block; width: 100%; height: 58px; object-fit: contain; margin: -5px 0 1px; }
-.lot { display: flex; justify-content: space-between; gap: 4px; align-items: center; color: #bb9d85; font: 10px var(--mono); }
-.lot .price { color: var(--accent-bright); font-weight: 800; }
-.ore-card b, .fit-card b { display: block; font-size: 12px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ore-card small, .fit-card small { display: block; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.fit-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.fit-card { position: relative; display: block; min-width: 0; width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px 10px; background: linear-gradient(155deg, #282522, #1d1c1a 65%); overflow: hidden; }
+.fit-card:hover { border-color: #8c6246; }
+.fit-card[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px #a65d39, 0 2px 18px #d08a3c15; background: linear-gradient(155deg, #36271f, #25201b 75%); }
+.fit-card b { display: block; font-size: 12px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fit-card small { display: block; color: var(--muted); font-size: 10px; line-height: 1.45; }
+#ore-nav { position: absolute; z-index: 4; inset: 0; pointer-events: none; }
+.ore-arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 50px; border: 1px solid #9a6e4b; border-radius: 9px; color: #ffe2c2; background: #241a15eb; font: 34px/1 system-ui; pointer-events: auto; }
+.ore-arrow:hover, .ore-arrow:active { background: #492d20; }
+.ore-arrow.previous { left: 16px; }
+.ore-arrow.next { right: 16px; }
+#ore-position { position: absolute; left: 50%; bottom: 42px; transform: translateX(-50%); padding: 4px 9px; border: 1px solid #695041; border-radius: 6px; background: #211912d9; color: #e6c5aa; font-size: 11px; white-space: nowrap; }
+.report-row { display: grid; grid-template-columns: 4.5em 3.5em 1fr; align-items: baseline; gap: 6px; font-size: 12px; }
+.report-row b { color: var(--accent-bright); }
+.report-vein { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.report-vein small, .report-vein strong { display: block; }
+.vein-sample { display: inline-block; width: 44px; height: 27px; border-radius: 5px; background: repeating-linear-gradient(153deg,var(--vein-dark) 0 5px,var(--vein) 6px 7px,#2b2926 8px 11px); }
+.tray:empty { display: none; }
 .fit-card { min-height: 98px; padding: 12px; }
 .fit-colors { display: flex; gap: 5px; margin-bottom: 8px; }
 .fit-colors i { width: 29px; height: 7px; border-radius: 8px; background: var(--sample); box-shadow: inset 0 1px #ffffff37; }
@@ -182,11 +193,12 @@ dialog::backdrop { background: #090807be; }
   .tray { margin-top: 12px; }
   .tray-head { margin-bottom: 7px; }
   .tray-head h2 { font-size: 13px; }
-  .ore-grid { display: flex; overflow-x: auto; overscroll-behavior-inline: contain; padding-bottom: 5px; scroll-snap-type: x proximity; scrollbar-width: thin; }
-  .ore-card { flex: 0 0 99px; padding: 6px 7px; scroll-snap-align: start; }
-  .ore-card canvas { height: 45px; margin-top: -3px; }
-  .ore-card b, .fit-card b { font-size: 11px; }
-  .ore-card small, .fit-card small { font-size: 9px; }
+  .ore-arrow { width: 44px; height: 46px; }
+  .ore-arrow.previous { left: 9px; }
+  .ore-arrow.next { right: 9px; }
+  #ore-position { bottom: 34px; }
+  .fit-card b { font-size: 11px; }
+  .fit-card small { font-size: 9px; }
   .fit-grid { gap: 6px; }
   .fit-card { padding: 7px; min-height: 90px; }
   .brief { min-height: 44px; padding: 8px 9px; }

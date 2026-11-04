@@ -1,12 +1,14 @@
-import { makeBladeMaterial, makeCutMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js';
-import { familyOf } from './forge.js';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js';
+import { familyOf, HEAT, modelCandidates } from './forge.js';
+import { KNIFE_IDS, regionAt } from './regions.js';
 
 const T = globalThis.THREE;
 const modelFiles = {
-  ore: 'ore_small', blank: 'blank_ingot_small', straight: 'knife_straight',
-  tangdao: 'knife_tangdao', karambit: 'knife_karambit',
+  ore: 'ore_small', molten: 'molten_sphere_small', blank: 'blank_ingot_small',
+  ...Object.fromEntries(KNIFE_IDS.map(id => [id, 'knife_' + id])),
 };
-const starts = { straight: .445, tangdao: .355, karambit: .44 };
+const doubleEdge = new Set(['gladius', 'kris', 'skull']);
+const oreProfiles = { river: [1.75, 1.29, 1.63], frost: [1.36, 1.68, 1.45], coal: [1.69, 1.37, 1.56], meteor: [1.46, 1.56, 1.63] };
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -19,6 +21,8 @@ function coordinates(geometry, id) {
   const maxY = Array(binCount).fill(-Infinity);
   const length = max.x - min.x;
   const along = x => clamp((x - min.x) / length, 0, .9999);
+  const cross = y => clamp((y - min.y) / (max.y - min.y), 0, 1);
+  const region = (x, y) => regionAt(id, along(x), cross(y));
   const bin = x => Math.floor(along(x) * binCount);
   for (let i = 0; i < pos.count; i++) {
     const k = bin(pos.getX(i));
@@ -32,18 +36,20 @@ function coordinates(geometry, id) {
     const x = pos.getX(i);
     const t = along(x);
     const across = widthAt(bin(x), pos.getY(i));
-    const blade = id === 'blank' ? 1 : clamp((t - starts[id] + .02) / .047, 0, 1);
-    const sharp = clamp((.27 - across) / .24, 0, 1) * (id === 'blank' ? .23 : 1);
-    attrib.set([t, across, blade, sharp], i * 4);
+    const { blade, grip } = region(x, pos.getY(i));
+    const edgeDistance = doubleEdge.has(id) ? Math.min(across, 1 - across) : across;
+    const sharp = clamp((.24 - edgeDistance) / .23, 0, 1) * blade * (id === 'blank' ? .23 : 1);
+    attrib.set([t, across, grip, sharp], i * 4);
   }
   geometry.setAttribute('forgeCoord', new T.BufferAttribute(attrib, 4));
-  const guides = minY.map((bottom, index) => {
+  const guides = minY.flatMap((bottom, index) => {
     const t = (index + .5) / binCount;
-    if (!Number.isFinite(bottom) || t < (starts[id] ?? 0) + .018) return null;
+    if (!Number.isFinite(bottom)) return [];
     const x = min.x + t * length;
-    return new T.Vector3(x, (bottom + maxY[index]) / 2, max.z * .66);
-  }).filter(Boolean);
-  return { guides, along, across: (x, y) => widthAt(bin(x), y) };
+    return [.20, .50, .80].map(fraction => new T.Vector3(x, lerp(bottom, maxY[index], fraction), max.z * .50))
+      .filter(point => region(point.x, point.y).blade > .60);
+  });
+  return { guides, along, region, across: (x, y) => widthAt(bin(x), y) };
 }
 
 function oreSection(geometry, cut) {
@@ -163,6 +169,18 @@ function makeHammer() {
   return group;
 }
 
+function makeCrucible() {
+  const group = new T.Group();
+  const profile = [[.13,-.27],[.48,-.27],[.70,-.18],[.87,.06],[.87,.14],[.81,.16],[.75,.11],[.69,-.045],[.49,-.17],[.13,-.17]];
+  const ceramic = new T.MeshStandardMaterial({ color: 0x3e312b, roughness: .72, metalness: .24, side: T.DoubleSide });
+  group.add(new T.Mesh(new T.LatheGeometry(profile.map(([r,y]) => new T.Vector2(r,y)), 32), ceramic));
+  const rim = new T.Mesh(new T.TorusGeometry(.81, .015, 6, 32), new T.MeshBasicMaterial({ color: 0xb86d40, toneMapped: false }));
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = .145;
+  group.add(rim);
+  return group;
+}
+
 function makeSparks() {
   const max = 104;
   const geometry = new T.BufferGeometry();
@@ -217,17 +235,24 @@ export class ForgeStage {
     this.content.position.y = .13;
     this.scene.add(this.content);
     this.anvil = makeAnvil();
+    this.crucible = makeCrucible();
     this.hammer = makeHammer();
     this.hammerHome = new T.Vector3(1.37, .54, .56);
     this.sparks = makeSparks();
-    this.scene.add(this.anvil, this.hammer, this.sparks.view);
+    const trailGeometry = new T.BufferGeometry();
+    trailGeometry.setAttribute('position', new T.BufferAttribute(new Float32Array(6), 3));
+    this.trail = new T.Line(trailGeometry, new T.LineBasicMaterial({ color: 0xffcf9a, transparent: true, opacity: 0, depthWrite: false }));
+    this.trail.frustumCulled = false;
+    this.trail.visible = false;
+    this.scene.add(this.anvil, this.crucible, this.hammer, this.sparks.view, this.trail);
     this.loader = new T.GLTFLoader();
     this.cache = new Map();
     this.pending = new Map();
     this.oreUniforms = {
       oreTint: { value: new T.Color() }, oreSeed: { value: 0 },
-      oreReveal: { value: 0 }, oreGrade: { value: 0 },
+      oreReveal: { value: 0 }, oreGrade: { value: 0 }, oreHeat: { value: 0 }, oreClue: { value: 0 },
     };
+    this.meltUniforms = { meltClock: { value: 0 }, meltHeat: { value: .65 }, meltClean: { value: 0 }, meltTint: { value: new T.Color() } };
     this.mode = 'ore';
     this.want = 'ore';
     this.mesh = null;
@@ -237,6 +262,7 @@ export class ForgeStage {
     this.entered = performance.now();
     this.raycaster = new T.Raycaster();
     this.reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.slowFrames = 0;
     new ResizeObserver(() => this.resize()).observe(canvas);
     this.resize();
     requestAnimationFrame(this.frame);
@@ -250,9 +276,11 @@ export class ForgeStage {
       let source;
       scene.traverse(obj => { if (obj.isMesh && !source) source = obj; });
       const { geometry } = source;
-      const coords = id === 'ore' ? null : coordinates(geometry, id);
-      const uniforms = id === 'ore' ? this.oreUniforms : surfaceUniforms();
-      const material = id === 'ore' ? makeOreMaterial(source.material, uniforms) : makeBladeMaterial(source.material, uniforms, id === 'blank');
+      const process = id === 'ore' || id === 'molten';
+      const coords = process ? null : coordinates(geometry, id);
+      const uniforms = id === 'ore' ? this.oreUniforms : id === 'molten' ? this.meltUniforms : surfaceUniforms();
+      const material = id === 'ore' ? makeOreMaterial(source.material, uniforms) :
+        id === 'molten' ? makeMeltMaterial(uniforms) : makeBladeMaterial(source.material, uniforms, id === 'blank');
       const mesh = new T.Mesh(geometry, material);
       const asset = { mesh, coords, uniforms };
       this.cache.set(id, asset);
@@ -264,17 +292,44 @@ export class ForgeStage {
 
   async prepare() {
     await this.load('ore');
-    const warm = async id => {
+    this.warm('molten');
+    this.warm('blank');
+  }
+
+  async warm(id) {
+    try {
       const { mesh } = await this.load(id);
       const temporary = new T.Scene();
       temporary.environment = this.scene.environment;
       temporary.add(mesh.clone());
       if (this.renderer.extensions.has('KHR_parallel_shader_compile')) await this.renderer.compileAsync(temporary, this.camera, this.scene);
       else this.renderer.compile(temporary, this.camera, this.scene);
-    };
-    for (const id of ['blank', 'straight', 'tangdao', 'karambit']) {
-      warm(id).catch(error => console.warn('Model preload', id, error));
+    } catch (error) {
+      console.warn('Model preload', id, error);
     }
+  }
+
+  prepareRun(run) {
+    if (!run.ore || this.preloadSeed === run.seed) return;
+    this.preloadSeed = run.seed;
+    const { normal, rare } = modelCandidates(run);
+    const keep = new Set(['ore', 'molten', 'blank', normal, ...rare, run.model, this.shown]);
+    for (const [id, item] of this.cache) {
+      if (keep.has(id)) continue;
+      item.mesh.geometry.dispose();
+      item.mesh.material.map?.dispose();
+      item.mesh.material.dispose();
+      item.uniforms.fMarks?.value.dispose();
+      this.cache.delete(id);
+    }
+    for (const id of new Set(['molten', 'blank', normal, ...rare, run.model])) this.warm(id);
+  }
+
+  setHeat(heat) {
+    this.heat = heat.temperature / 100;
+    this.meltUniforms.meltHeat.value = this.heat;
+    this.meltUniforms.meltClean.value = Math.min(1, heat.stable / HEAT.good);
+    this.oreUniforms.oreHeat.value = heat.step === 'ore' ? this.heat : 0;
   }
 
   resize() {
@@ -301,17 +356,29 @@ export class ForgeStage {
       if (this.mode !== 'broken') this.clearPieces();
       if (this.mode !== 'reveal') this.clearOrePieces();
     }
-    const stone = this.mode === 'ore' || this.mode === 'reveal';
+    const stone = this.mode === 'ore' || this.mode === 'reveal' || run.refining?.step === 'ore';
+    if (run.refining?.step && run.refining.step !== this.refiningStep) {
+      if (run.refining.step === 'molten') this.emit(new T.Vector3(0, -.20, .25), new T.Color('#ee814b'), 13, false, true);
+      if (run.refining.step === 'cast') this.emit(new T.Vector3(0, -.28, .35), new T.Color('#ffd18e'), 18, false);
+    }
+    this.refiningStep = run.refining?.step;
     if (ore) {
       this.oreUniforms.oreTint.value.set(familyOf(ore.family).color);
       this.oreUniforms.oreSeed.value = ore.figure;
+      this.oreUniforms.oreClue.value = ore.clue / 2;
       this.oreUniforms.oreGrade.value = this.mode === 'reveal' ? ore.grade : 0;
       this.stoneShape = ore.figure;
+      this.stoneFamily = ore.family;
+      this.meltUniforms.meltTint.value.set(familyOf(ore.family).color);
     }
-    this.want = stone ? 'ore' : run.model;
+    if (this.mode !== 'refine') this.oreUniforms.oreHeat.value = 0;
+    this.prepareRun(run);
+    this.want = stone ? 'ore' : run.refining?.step === 'molten' ? 'molten' : run.model;
     if (this.cache.has(this.want)) this.show(this.want);
-    else this.load(this.want).then(() => this.show(this.want)).catch(error => console.error('Blade model', error));
-    if (this.mesh && this.shown !== 'ore') setSurface(this.active.uniforms, run, fit);
+    else {
+      const id = this.want;
+      this.load(id).then(() => { if (this.want === id) this.show(id); }).catch(error => console.error('Blade model', error));
+    }
   }
 
   show(id) {
@@ -326,13 +393,26 @@ export class ForgeStage {
       this.mesh.visible = true;
       this.mesh.rotation.set(0, 0, 0);
       this.mesh.position.set(0, 0, 0);
-      this.mesh.scale.setScalar(id === 'ore' ? 1.58 : id === 'blank' ? 2.35 : 2.74);
+      this.mesh.scale.setScalar(id === 'ore' ? 1.58 : id === 'molten' ? 1.45 : id === 'blank' ? 2.35 : 2.74);
       this.swapAt = performance.now();
     }
-    if (id !== 'ore' && this.run) setSurface(asset.uniforms, this.run, this.fit);
+    if (asset.coords && this.run) {
+      setSurface(asset.uniforms, this.run, this.fit);
+      if (this.lastImpact) {
+        asset.uniforms.fHit.value.copy(this.lastImpact.local);
+        if (performance.now() - this.bangedAt < 30) asset.uniforms.fPulse.value = Math.min(1.3, this.bangPower);
+      }
+    }
+    if (id === 'ore') {
+      const [x, y, z] = oreProfiles[this.stoneFamily] || oreProfiles.river;
+      const variation = (this.stoneShape ?? .5) - .5;
+      this.mesh.scale.set(x + variation * .27, y - variation * .29, z + variation * .18);
+    }
     if (id === 'ore' && this.mode === 'reveal' && !this.orePieces) this.cutOre();
     if (id !== 'ore' && this.mode === 'broken' && !this.blow && !this.pieces) {
-      this.split(new T.Vector3());
+      const position = this.run?.last?.mark;
+      const bounds = this.mesh.geometry.boundingBox;
+      this.split(new T.Vector3(position && bounds ? lerp(bounds.min.x, bounds.max.x, position.u) : 0, 0, 0));
       this.splitAt -= 600;
     }
   }
@@ -396,7 +476,7 @@ export class ForgeStage {
     const impact = this.raycaster.intersectObject(this.mesh, false)[0];
     let local = impact && this.mesh.worldToLocal(impact.point.clone());
     const { coords } = this.active;
-    if (local && this.shown !== 'blank' && coords.along(local.x) < starts[this.shown] - .035) return null;
+    if (local && coords.region(local.x, local.y).blade < .42) return null;
     if (!local) {
       let best = Infinity;
       for (const guide of coords.guides) {
@@ -404,33 +484,45 @@ export class ForgeStage {
         const distance = Math.hypot(screen.x - clientX, screen.y - clientY);
         if (distance < best) { best = distance; local = guide.clone(); }
       }
-      if (best > (this.aspect < 1.35 ? 24 : 19)) return null;
+      if (best > (matchMedia('(pointer: coarse)').matches || this.aspect < 1.35 ? 26 : 18)) return null;
     }
-    const t = coords.along(local.x);
-    const zone = t > .86 ? 'tip' : coords.across(local.x, local.y) < .30 ? 'edge' : 'belly';
-    return { local, world: this.mesh.localToWorld(local.clone()), zone };
+    const u = coords.along(local.x), v = coords.across(local.x, local.y);
+    const zone = u > .86 ? 'tip' : v < .30 || (doubleEdge.has(this.shown) && v > .70) ? 'edge' : 'belly';
+    return { local, world: this.mesh.localToWorld(local.clone()), zone, position: { u, v }, mesh: this.mesh };
   }
 
   keyboardHit() {
     if (!this.active?.coords) return null;
     const guides = this.active.coords.guides;
     const local = guides[Math.floor(guides.length * .47)].clone();
-    return { local, world: this.mesh.localToWorld(local.clone()), zone: 'belly' };
+    const { coords } = this.active;
+    return { local, world: this.mesh.localToWorld(local.clone()), zone: 'belly', mesh: this.mesh,
+      position: { u: coords.along(local.x), v: coords.across(local.x, local.y) } };
   }
 
-  swing(hit, onImpact, onReady) {
-    this.blow = { hit, onImpact, onReady, start: performance.now(), landed: false, contact: 114, end: 349 };
+  swing(hit, event, onImpact, onReady) {
+    const severe = event.type === 'break' || event.notable;
+    const stop = severe ? 65 : event.type === 'surge' ? 53 : event.type === 'scar' ? 38 : 24;
+    if (hit.mesh === this.mesh) hit.world.copy(this.mesh.localToWorld(hit.local.clone()));
+    this.blow = { hit, onImpact, onReady, start: performance.now(), landed: false, contact: 108, stop,
+      end: severe ? 453 : event.type === 'surge' ? 382 : 348 };
   }
 
   impact(hit, event) {
-    const high = event.type === 'surge' || event.change?.tier === 3;
+    const high = event.type === 'surge' || event.notable;
     const broken = event.type === 'break';
     this.bangedAt = performance.now();
+    this.lastImpact = { local: hit.local.clone(), zone: hit.zone, large: high || broken, wave: high || Boolean(event.change) };
     this.bangPower = broken ? 1.6 : high ? 1.2 : .72;
-    this.flash.position.copy(hit.world).add(new T.Vector3(0, .12, .32));
-    if (this.active?.uniforms.fHit) this.active.uniforms.fHit.value.copy(hit.local);
-    const color = new T.Color(broken ? '#ff634b' : high ? '#b6e9ff' : '#ff9b47');
-    this.emit(hit.world, color, broken ? 63 : high ? 51 : 26, high || broken);
+    this.flash.position.copy(hit.world).add(new T.Vector3(0, .025, .18));
+    this.flash.intensity = this.bangPower * 3.7;
+    if (this.active?.uniforms.fHit) {
+      this.active.uniforms.fHit.value.copy(hit.local);
+      this.active.uniforms.fPulse.value = Math.min(1.3, this.bangPower);
+    }
+    const color = new T.Color(broken ? '#ff634b' : event.type === 'scar' ? '#c37449' : high ? '#b6e9ff' : '#ffb465');
+    const count = broken ? 46 : high ? 38 : event.type === 'scar' ? 14 : 19;
+    this.emit(hit.world, color, this.reduceMotion ? Math.ceil(count / 2) : count, high || broken, event.type === 'scar');
     if (broken) this.split(hit.local);
   }
 
@@ -441,10 +533,10 @@ export class ForgeStage {
     this.emit(center, this.oreUniforms.oreTint.value.clone(), 28, false);
   }
 
-  emit(point, tint, count, long) {
+  emit(point, tint, count, long, grit = false) {
     const particles = this.sparks.particles;
     for (let i = 0; i < count; i++) {
-      const speed = (long ? 2.8 : 2.1) * (.30 + Math.random());
+      const speed = (grit ? 1.18 : long ? 2.8 : 2.1) * (.30 + Math.random());
       const angle = Math.random() * Math.PI * 1.6 + Math.PI * .06;
       particles.push({
         point: point.clone(),
@@ -458,7 +550,8 @@ export class ForgeStage {
 
   split(local) {
     if (!this.mesh?.visible || this.pieces) return;
-    const x = clamp(local.x, -.22, .23);
+    const box = this.mesh.geometry.boundingBox;
+    const x = clamp(local.x, lerp(box.min.x, box.max.x, .42), lerp(box.min.x, box.max.x, .91));
     const active = this.active;
     this.pieces = [-1, 1].map(direction => {
       const piece = this.mesh.clone();
@@ -484,7 +577,7 @@ export class ForgeStage {
 
   animatePieces(now) {
     if (!this.pieces) return;
-    const life = clamp((now - this.splitAt) / 590, 0, 1);
+    const life = clamp((now - this.splitAt - 47) / 550, 0, 1);
     const eased = 1 - (1 - life) ** 2;
     for (const { piece, plane, direction, x } of this.pieces) {
       piece.position.set(direction * eased * .26, -.23 * life * life, direction * .09 * eased);
@@ -522,7 +615,8 @@ export class ForgeStage {
 
   frame = (now) => {
     requestAnimationFrame(this.frame);
-    const dt = Math.min(.035, (now - (this.previousFrame || now)) / 1000);
+    const delta = now - (this.previousFrame || now);
+    const dt = Math.min(.035, delta / 1000);
     this.previousFrame = now;
     if (document.hidden) return;
     const t = now / 1000;
@@ -530,45 +624,74 @@ export class ForgeStage {
     const elapsed = now - this.entered;
     const inspect = ['fit', 'appraise'].includes(mode);
     const stone = this.shown === 'ore';
+    const melt = this.shown === 'molten';
+    const working = mode === 'forge' || mode === 'broken' || mode === 'refine';
+    if (working && delta > 0 && delta < 160) {
+      this.slowFrames = delta > 25 ? this.slowFrames + 1 : Math.max(0, this.slowFrames - 2);
+      if (this.slowFrames > 75 && this.renderer.getPixelRatio() > 1) {
+        this.renderer.setPixelRatio(Math.max(1, this.renderer.getPixelRatio() - .25));
+        this.resize();
+        this.slowFrames = 0;
+      }
+    }
     const strikeAge = now - (this.bangedAt ?? -5000);
     const impulse = Math.exp(-strikeAge / 116) * (this.bangPower || 0);
-    const shake = this.reduceMotion ? 0 : impulse * .037 * Math.sin(strikeAge / 21);
+    const shake = this.reduceMotion ? 0 : impulse * (this.lastImpact?.zone === 'tip' ? .045 : .021) * Math.sin(strikeAge / 21);
+    const compression = this.reduceMotion ? 0 : impulse * .035 * (1 - clamp(strikeAge / 105, 0, 1));
     const narrow = this.aspect < 1.3;
-    const angle = stone ? -.18 : narrow ? .48 : .29;
+    const angle = stone || melt ? -.18 : narrow ? .48 : .29;
     const startTurn = mode === 'appraise' && !this.reduceMotion ? .46 * (1 - clamp(elapsed / 1300, 0, 1)) : 0;
     const stoneTurn = mode === 'reveal' ? .10 : this.reduceMotion ? .65 : t * .29;
-    this.content.rotation.set(stone ? .27 + this.turnX : .055 + this.turnX, stone ? stoneTurn + this.turnY : -.10 + this.turnY + startTurn, angle + shake);
-    const working = mode === 'forge' || mode === 'broken' || mode === 'refine';
-    this.content.position.set(stone ? 0 : -.03, (stone ? .02 : working ? .12 : .21) - Math.abs(shake) * .50, .10);
-    const stoneShape = this.stoneShape ?? .5;
-    if (stone && mode === 'ore' && this.mesh) this.mesh.scale.set(1.39 + stoneShape * .36, 1.68 - stoneShape * .21, 1.43 + stoneShape * .28);
+    this.content.rotation.set(stone || melt ? .27 + this.turnX : .055 + this.turnX, stone || melt ? stoneTurn + this.turnY : -.10 + this.turnY + startTurn, angle + shake);
+    this.content.position.set(stone || melt ? 0 : -.03, (stone || melt ? .04 : working ? .12 : .21) - compression, .10);
+    if (melt) {
+      this.meltUniforms.meltClock.value = this.reduceMotion ? 0 : t;
+      const reveal = 1 - .20 * Math.exp(-(now - this.swapAt) / 155);
+      const breathe = this.reduceMotion ? 1 : 1 + Math.sin(t * 4) * .018;
+      this.mesh.scale.set(1.45 * reveal / breathe, 1.45 * reveal * breathe, 1.45 * reveal);
+    }
     this.oreUniforms.oreReveal.value = mode === 'reveal' ? clamp(elapsed / 520, 0, 1) : 0;
     if (this.active?.uniforms.fClock) {
       const { uniforms } = this.active;
       uniforms.fClock.value = this.reduceMotion ? 0 : t;
       uniforms.fHeat.value = mode === 'refine' ? this.heat : mode === 'forge' && this.shown === 'blank' ? .15 : 0;
       uniforms.fPulse.value = Math.min(1.3, impulse);
+      uniforms.fWave.value = this.lastImpact?.wave ? 1 - clamp(strikeAge / 270, 0, 1) : 0;
     }
-    this.anvil.visible = working;
-    this.anvil.position.set(.10, narrow ? -.91 : -.78, -.42);
+    this.anvil.visible = working && mode !== 'refine';
+    this.crucible.visible = mode === 'refine';
+    this.crucible.position.set(0, narrow ? -.83 : -.73, -.12);
+    this.anvil.position.set(.10, (narrow ? -.91 : -.78) - compression * .35, -.42);
     this.anvil.rotation.z = .11;
     this.hammer.visible = mode === 'forge' || !!this.blow;
-    this.flash.intensity = impulse * 5.3;
+    this.flash.intensity = impulse * (strikeAge < 33 ? 3.7 : 1.15);
+    this.camera.position.x = !this.reduceMotion && this.lastImpact?.large ? Math.sin(strikeAge / 19) * impulse * .035 : 0;
+    this.camera.updateMatrixWorld();
     this.sweep.intensity = inspect ? (mode === 'appraise' ? .45 + 1.1 * Math.exp(-elapsed / 820) : .58) : 0;
-    this.sweep.position.x = lerp(-2.8, 2.6, clamp(elapsed / 1500, 0, 1));
+    this.sweep.position.x = mode === 'appraise' ? lerp(-2.8, 2.6, clamp(elapsed / 1500, 0, 1)) : .8;
     this.key.intensity = mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : 2.9;
     const blow = this.blow;
+    this.trail.visible = false;
     if (blow) {
       const age = now - blow.start;
-      const reach = blow.hit.world.clone().add(new T.Vector3(.018, .145, .13));
+      const reach = blow.hit.world.clone().add(new T.Vector3(.018, .145, .085));
       if (age < blow.contact) {
         const p = age / blow.contact;
         this.hammer.position.lerpVectors(this.hammerHome, reach, p * p * (2.1 - 1.1 * p));
         this.hammer.position.y += Math.sin(p * Math.PI) * .34;
         this.hammer.rotation.set(.10, -.27, lerp(-.68, -.19, p));
+        if (p > .58 && !this.reduceMotion) {
+          const line = this.trail.geometry.attributes.position;
+          const head = this.hammer.position;
+          line.setXYZ(0, head.x - .08, head.y + .005, head.z);
+          line.setXYZ(1, head.x + (this.hammerHome.x - head.x) * .18, head.y + .19, head.z);
+          line.needsUpdate = true;
+          this.trail.material.opacity = (p - .58) * .7;
+          this.trail.visible = true;
+        }
       } else {
         if (!blow.landed) { blow.landed = true; blow.onImpact(); }
-        const p = clamp((age - blow.contact - 22) / (blow.end - blow.contact - 22), 0, 1);
+        const p = clamp((age - blow.contact - blow.stop) / (blow.end - blow.contact - blow.stop), 0, 1);
         this.hammer.position.lerpVectors(reach, this.hammerHome, 1 - (1 - p) ** 2.3);
         this.hammer.rotation.set(.10, -.27, lerp(-.19, -.68, p));
         if (age >= blow.end) { this.blow = null; blow.onReady(); }

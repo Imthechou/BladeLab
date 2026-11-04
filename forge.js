@@ -1,7 +1,10 @@
 export const STORAGE_KEY = 'bladelab.forge.1';
-export const MAX_STRIKES = 26;
 export const MIN_PRICE = 14;
 export const REFRESH_PRICE = 12;
+export const LOT_SIZE = 3;
+export const BATCHES = 3;
+export const MARK_WIDTH = 24;
+export const MARK_HEIGHT = 8;
 export const PHASES = ['ore', 'refine', 'forge', 'fit', 'appraise'];
 
 export const FAMILIES = [
@@ -17,19 +20,31 @@ export const LOOKS = {
   film: { none: '', oxide: '淬蓝', doppler: '深海 Doppler', rainbow: '极光虹膜', gold: '赤金热带' },
   fx: { none: '', edge: '刃光', ember: '余烬', aurora: '流光' },
 };
-export const MODELS = { blank: '刀胚', straight: '直刀', tangdao: '唐刀', karambit: '爪子刀' };
+export const MODELS = {
+  blank: '刀胚', straight: '直刀', tangdao: '唐刀', karambit: '爪子刀',
+  survival: '求生匕首', bayonet: '刺刀', balisong: '蝴蝶刀', folding: '折叠刀',
+  gladius: '短剑', kris: '马来剑', machete: '开山刀', saber: '弯刀', skull: '骷髅匕首',
+};
 export const GRADES = ['普通', '良质', '稀质'];
 export const STAT_NAMES = ['强度', '韧性', '锋利', '工艺', '设计', '灵性'];
 export const FITS = [
-  { id: 'walnut', name: '赤木束柄', parts: '胡桃木 · 磷化护手 · 铜钉', color: '#673424', accent: '#bc8555', grip: 1, delta: [0, 5, 0, 3, 2, 0] },
-  { id: 'night', name: '夜行纤维', parts: '黑纤维 · 枪灰护手 · 黑铆', color: '#252c32', accent: '#687988', grip: 2, delta: [1, 0, 5, 3, 0, 0] },
-  { id: 'ivory', name: '霜白骨柄', parts: '骨白握柄 · 银护手 · 雾银钉', color: '#b5a889', accent: '#bfcbd2', grip: 3, delta: [0, 1, 0, 1, 5, 3] },
-  { id: 'copper', name: '炉心铜座', parts: '棕皮 · 暖铜护手 · 赤铜尾帽', color: '#694031', accent: '#d69e5b', grip: 2, delta: [6, 1, -2, 0, 2, 2] },
-  { id: 'ink', name: '墨蓝缠线', parts: '深蓝缠柄 · 冷银护手 · 银钉', color: '#233b58', accent: '#82a4c3', grip: 3, delta: [0, 4, 4, 0, 1, 0] },
-  { id: 'jade', name: '苍玉包柄', parts: '黛绿握柄 · 烟银护手 · 玉嵌', color: '#31685a', accent: '#7eb8a2', grip: 1, delta: [-1, 0, 1, 2, 4, 5] },
+  { id: 'walnut', role: '沉稳', name: '赤木束柄', parts: '胡桃木 · 铜色端箍', color: '#673424', accent: '#bc8555', grip: 1, delta: [0, 5, 0, 3, 2, 0] },
+  { id: 'night', role: '轻巧', name: '夜行纤维', parts: '黑纤维 · 枪灰端箍', color: '#252c32', accent: '#687988', grip: 2, delta: [1, 0, 5, 3, 0, 0] },
+  { id: 'ivory', role: '衬纹', name: '霜白骨柄', parts: '骨白握柄 · 雾银端箍', color: '#b5a889', accent: '#bfcbd2', grip: 3, delta: [0, 1, 0, 1, 5, 3] },
+  { id: 'copper', role: '沉稳', name: '炉心铜座', parts: '棕皮 · 赤铜端箍', color: '#694031', accent: '#d69e5b', grip: 2, delta: [6, 1, -2, 0, 2, 2] },
+  { id: 'ink', role: '轻巧', name: '墨蓝缠线', parts: '深蓝缠柄 · 冷银端箍', color: '#233b58', accent: '#82a4c3', grip: 3, delta: [0, 4, 4, 0, 1, 0] },
+  { id: 'jade', role: '衬纹', name: '苍玉包柄', parts: '黛绿握柄 · 玉色嵌线', color: '#31685a', accent: '#7eb8a2', grip: 1, delta: [-1, 0, 1, 2, 4, 5] },
 ];
 
-const anchors = [[6, 0], [7, .01], [10, .021], [14, .037], [16, .053], [18, .08], [21, .125], [24, .206], [26, .29]];
+const anchors = [[6, 0], [10, .006], [14, .017], [18, .034], [22, .068], [25, .128], [27, .231], [30, .5], [35, .66], [40, .8], [45, .9]];
+const priceBands = [[14, 18, .67, .95], [22, 28, .50, .88], [32, 40, .38, .78]];
+const purityBands = [[42, 64], [58, 78], [72, 88]];
+const centers = { river: 68, frost: 58, coal: 62, meteor: 49 };
+const standardModels = ['straight', 'survival', 'bayonet'];
+const strangeModels = Object.keys(MODELS).filter(id => id !== 'blank' && !standardModels.includes(id));
+export const HEAT = Object.freeze({ initial: 35, melt: 65, lower: 65, upper: 78, danger: 86, preheat: 3.5, window: 7.5, good: 3, minimum: .8, burn: 1.2, cast: 1 });
+const refineDelta = { good: [12, 12], fair: [4, 0], failed: [-12, -18] };
+const freshHeat = () => ({ step: 'ore', temperature: HEAT.initial, elapsed: 0, stable: 0, hot: 0, result: null });
 const slotWeights = {
   belly: [30, 48, 16, 6],
   edge: [8, 15, 53, 24],
@@ -52,16 +67,37 @@ export function rngFor(...parts) {
 const pick = (array, roll) => array[Math.floor(roll() * array.length)];
 
 export function freshSave(seed = Date.now()) {
-  return { version: 1, credits: 76, collection: [], count: 0, run: freshRun(seed) };
+  return { version: 2, credits: 76, collection: [], count: 0, run: freshRun(seed) };
 }
 
 export function freshRun(seed) {
   return {
-    seed, phase: 'ore', batch: 0, selected: 0, ore: null, purity: 0,
-    hits: 0, work: 0, cracks: 0, idle: 0, changedShape: false, model: 'blank',
+    seed, phase: 'ore', batch: 0, selected: 0, ore: null, purity: 0, stability: 60, refining: null, refinement: null,
+    hits: 0, work: 0, cracks: 0, changedShape: false, model: 'blank', marks: {}, highlights: [],
     fit: null, refreshed: false, last: null, record: null,
     skin: { metal: 'raw', pattern: 'none', film: 'none', fx: 'none', levels: { metal: 1, pattern: 0, film: 0, fx: 0 }, seed: rngFor(seed, 'surface')() },
   };
+}
+
+export function migrateSave(save) {
+  if (!save || ![1, 2].includes(save.version) || !Number.isFinite(save.credits) || !Array.isArray(save.collection) ||
+    ![...PHASES, 'reveal', 'broken'].includes(save.run?.phase) || !save.run.skin?.levels) return null;
+  if (save.version === 2) return save;
+  const run = save.run;
+  if (run.ore) {
+    const [low, high] = purityBands[run.ore.grade] || purityBands[0];
+    run.ore = { ...run.ore, purity: Math.round((low + high) / 2), stability: centers[run.ore.family] || 60, tier: 0 };
+  }
+  run.batch = clamp(run.batch || 0, 0, BATCHES - 1);
+  run.selected = (run.selected || 0) % LOT_SIZE;
+  run.stability = clamp((run.ore?.stability ?? 60) + ((run.purity || 65) - 65) * .45, 0, 100);
+  run.refining = run.phase === 'refine' ? freshHeat() : null;
+  run.legacyFittings = run.phase === 'fit';
+  run.refinement = null;
+  run.marks = {};
+  run.highlights = [];
+  save.version = 2;
+  return save;
 }
 
 export function restart(save, seed) {
@@ -72,21 +108,41 @@ export function restart(save, seed) {
 }
 
 export function offers(run) {
-  return Array.from({ length: 5 }, (_, index) => {
-    const id = run.batch * 5 + index;
-    const roll = rngFor(run.seed, 'tray', id);
-    const family = pick(FAMILIES, roll);
-    const price = index === 0 ? MIN_PRICE : 17 + Math.floor(roll() * 24);
-    const chance = .08 + (price - MIN_PRICE) * .0065;
-    const gradeRoll = roll();
-    const grade = gradeRoll < chance ? 2 : gradeRoll < .48 + (price - MIN_PRICE) * .003 ? 1 : 0;
+  const order = rngFor(run.seed, 'batch', run.batch);
+  const priceShift = Math.floor(order() * LOT_SIZE);
+  const familyShift = Math.floor(order() * FAMILIES.length);
+  return Array.from({ length: LOT_SIZE }, (_, index) => {
+    const id = run.batch * LOT_SIZE + index;
+    const tier = (index + priceShift) % LOT_SIZE;
+    const roll = rngFor(run.seed, 'tray-v2', id);
+    const family = FAMILIES[(familyShift + index) % FAMILIES.length];
+    const [low, high, ordinary, good] = priceBands[tier];
+    const price = tier === 0 ? MIN_PRICE : low + Math.floor(roll() * (high - low + 1));
+    const quality = roll();
+    const grade = quality < ordinary ? 0 : quality < good ? 1 : 2;
+    const [lo, hi] = purityBands[grade];
     const clue = Math.floor(roll() * 3);
     const figure = roll();
-    return { id, family: family.id, price, grade, clue, figure, number: String(id + 1).padStart(2, '0') };
+    const purity = lo + Math.floor(roll() * (hi - lo + 1));
+    const stability = centers[family.id] + Math.floor(roll() * 19) - 9;
+    return { id, family: family.id, price, grade, clue, figure, purity, stability, tier, number: String(id + 1).padStart(2, '0') };
   });
 }
 
 export const familyOf = (id) => FAMILIES.find(family => family.id === id) || FAMILIES[0];
+export const stabilityOf = value => value < 50 ? '偏脆' : value >= 70 ? '稳定' : '中等';
+
+export function modelCandidates(run) {
+  const family = FAMILIES.findIndex(item => item.id === run.ore?.family);
+  const normal = standardModels[Math.floor(rngFor(run.seed, 'initial-model')() * standardModels.length)];
+  const roll = rngFor(run.seed, 'rare-models', family);
+  const rare = [...strangeModels];
+  for (let i = rare.length - 1; i > 0; i--) {
+    const j = Math.floor(roll() * (i + 1));
+    [rare[i], rare[j]] = [rare[j], rare[i]];
+  }
+  return { normal, rare: rare.slice(0, 2) };
+}
 
 export function buyOre(save) {
   const run = save.run;
@@ -99,24 +155,59 @@ export function buyOre(save) {
   return true;
 }
 
-export function refine(run, temperature) {
-  if (run.phase !== 'refine') return false;
-  const purity = clamp(1 - Math.abs(71 - temperature) / (temperature > 71 ? 37 : 78), .32, 1);
-  run.purity = Math.round(purity * 100);
-  run.phase = 'forge';
+export function beginRefining(run) {
+  if (run.phase !== 'reveal') return false;
+  run.phase = 'refine';
+  run.refining = freshHeat();
   return true;
+}
+
+export function advanceHeat(run, seconds, blowing) {
+  if (run.phase !== 'refine' || !run.refining || seconds <= 0) return;
+  const heat = run.refining;
+  if (heat.step === 'cast') {
+    heat.elapsed += seconds;
+    if (heat.elapsed >= HEAT.cast) {
+      const [purity, stability] = refineDelta[heat.result];
+      run.purity = clamp(run.ore.purity + purity, 0, 100);
+      run.stability = clamp(run.ore.stability + stability, 0, 100);
+      run.refinement = { result: heat.result, purity: run.purity, stability: run.stability };
+      run.refining = null;
+      run.phase = 'forge';
+    }
+    return;
+  }
+  heat.elapsed += seconds;
+  heat.temperature = clamp(heat.temperature + seconds * (blowing ? 30 : -22), 0, 100);
+  if (heat.step === 'ore') {
+    if (heat.temperature >= HEAT.melt || heat.elapsed >= HEAT.preheat) {
+      heat.result = heat.temperature < HEAT.melt ? 'failed' : null;
+      heat.temperature = Math.max(HEAT.melt, heat.temperature);
+      heat.step = 'molten';
+      heat.elapsed = 0;
+    }
+    return;
+  }
+  if (heat.temperature >= HEAT.lower && heat.temperature <= HEAT.upper) heat.stable += seconds;
+  if (heat.temperature >= HEAT.danger) heat.hot += seconds;
+  if (heat.hot >= HEAT.burn || heat.elapsed >= (heat.result ? .6 : HEAT.window)) {
+    heat.result ||= heat.hot >= HEAT.burn || heat.stable < HEAT.minimum ? 'failed' : heat.stable >= HEAT.good ? 'good' : 'fair';
+    heat.step = 'cast';
+    heat.elapsed = 0;
+  }
 }
 
 export function fractureRisk(run) {
   const next = run.hits + 1;
   if (next <= 6) return 0;
+  if (next >= 45) return .9;
   const hi = anchors.findIndex(([hit]) => hit >= next);
-  const [a, pa] = anchors[Math.max(0, hi - 1)];
-  const [b, pb] = anchors[hi < 0 ? anchors.length - 1 : hi];
-  const baseline = a === b || hi < 0 ? pb : pa + (pb - pa) * ((next - a) / (b - a));
-  const refineFactor = 1.19 - run.purity * .0035;
-  const oreFactor = 1 - run.ore.grade * .055;
-  return Math.min(.36, Math.round((baseline * refineFactor * oreFactor + run.cracks * .0065) * 1000) / 1000);
+  const [a, pa] = anchors[hi - 1];
+  const [b, pb] = anchors[hi];
+  const baseline = pa + (pb - pa) * ((next - a) / (b - a));
+  const stability = run.stability < 50 ? 1.25 : run.stability >= 70 ? .8 : 1;
+  const blend = clamp((30 - next) / 12, 0, 1);
+  return Math.round(baseline * (1 + (stability - 1) * blend) * 1000) / 1000;
 }
 
 function chooseSlot(run, zone, type, roll) {
@@ -124,23 +215,33 @@ function chooseSlot(run, zone, type, roll) {
   const choices = keys.map((slot, index) => ({
     slot,
     weight: slotWeights[zone][index] * (run.skin[slot] === 'none' ? 1.45 : 1),
-  })).filter(({ slot }) => (slot !== 'film' || run.hits >= 7) && (slot !== 'fx' || run.hits >= (type === 'surge' ? 9 : 12)));
+  })).filter(({ slot }) => (slot !== 'film' || run.hits >= 7) &&
+    (slot !== 'fx' || run.hits >= (type === 'surge' ? 9 : 12)) &&
+    (type === 'surge' || run.skin.levels[slot] < 2));
+  if (!choices.length) return null;
   let point = roll() * choices.reduce((sum, item) => sum + item.weight, 0);
   return choices.find(({ weight }) => (point -= weight) < 0)?.slot || choices.at(-1).slot;
 }
 
 function mutate(run, slot, type, roll, guaranteed = false) {
+  if (!slot) return null;
   const family = familyOf(run.ore.family);
   const original = run.skin[slot];
   const level = run.skin.levels[slot];
   const nextLevel = type === 'surge' && run.hits >= 13 ? 3 : 2;
-  if (!guaranteed && original !== 'none' && original !== 'raw' && level < nextLevel && roll() < .57) {
+  if (!guaranteed && original !== 'none' && original !== 'raw' && level < nextLevel && (type !== 'surge' || roll() < .71)) {
     run.skin.levels[slot]++;
     return { slot, label: LOOKS[slot][original] + '强化', action: 'upgrade', tier: run.skin.levels[slot] };
   }
   const familyChoice = family[slot] ?? ({ coal: 'ember', meteor: 'aurora' }[family.id] || 'edge');
-  const options = Object.keys(LOOKS[slot]).filter(id => id !== 'none' && id !== 'raw' && id !== original);
-  const next = (guaranteed || roll() < .52) && options.includes(familyChoice) ? familyChoice : pick(options, roll);
+  const options = Object.keys(LOOKS[slot]).filter(id => id !== 'none' && id !== 'raw' && id !== original &&
+    !(slot === 'film' && id === 'rainbow' && run.skin.pattern === 'ember') &&
+    !(slot === 'pattern' && id === 'ember' && run.skin.film === 'rainbow'));
+  const affinity = slot === 'pattern' ? 2.5 : slot === 'film' ? 1.5 : 2;
+  const premium = run.ore.tier === 2 && slot === 'film' ? .7 : 0;
+  let point = roll() * options.reduce((total, key) => total + (key === familyChoice ? affinity + premium : 1), 0);
+  const next = guaranteed && slot === 'metal' && options.includes(familyChoice) ? familyChoice :
+    options.find(key => (point -= key === familyChoice ? affinity + premium : 1) < 0);
   if (!next) return null;
   run.skin[slot] = next;
   run.skin.levels[slot] = type === 'surge' && run.hits >= 13 ? (roll() < .34 ? 3 : 2) : 1;
@@ -155,24 +256,39 @@ export function signature(skin) {
   return null;
 }
 
-export function strike(run, zone) {
-  if (run.phase !== 'forge' || run.hits >= MAX_STRIKES || !(zone in slotWeights)) return null;
+function workSurface(run, type, position) {
+  const x = Math.floor(clamp(position.u, 0, .9999) * MARK_WIDTH);
+  const y = Math.floor(clamp(position.v, 0, .9999) * MARK_HEIGHT);
+  const key = y * MARK_WIDTH + x;
+  const before = run.marks[key] || 0;
+  const oldPolish = before & 15;
+  const oldGrain = (before >> 4) & 15;
+  const oldScar = (before >> 8) & 15;
+  const polish = clamp(oldPolish + (type === 'scar' ? -4 : type === 'surge' ? 5 : 3), 0, 15);
+  const grain = (oldGrain + 3) & 15;
+  const scar = clamp(oldScar + (type === 'scar' ? 7 : -1), 0, 15);
+  run.marks[key] = polish | (grain << 4) | (scar << 8);
+  return { u: position.u, v: position.v };
+}
+
+export function strike(run, zone, position = { u: .67, v: zone === 'edge' ? .12 : .48 }) {
+  if (run.phase !== 'forge' || !Object.hasOwn(slotWeights, zone)) return null;
   const risk = fractureRisk(run);
   const hit = ++run.hits;
-  const roll = rngFor(run.seed, 'strike', hit);
-  if (roll() < risk) {
+  const roll = rngFor(run.seed, 'work', hit);
+  if (rngFor(run.seed, 'fracture', hit)() < risk) {
     run.phase = 'broken';
-    return run.last = { type: 'break', hit, zone, risk, label: '刀身断裂' };
+    return run.last = { type: 'break', hit, zone, risk, label: '刀身断裂', mark: position };
   }
   const before = signature(run.skin);
   const draw = roll();
-  let type = draw < .11 && hit > 6 ? 'scar' : draw > .88 ? 'surge' : draw > .34 ? 'shift' : 'polish';
+  let type = draw < .08 && hit > 6 ? 'scar' : draw >= .88 ? 'surge' : draw >= .38 ? 'shift' : 'polish';
   let change = null;
   if (hit === 2 || hit === 4 || hit === 6) {
     type = 'shift';
     if (hit === 4) {
-      run.model = 'straight';
-      change = { slot: 'model', label: '直刀成型', action: 'form', tier: 1 };
+      run.model = modelCandidates(run).normal;
+      change = { slot: 'model', label: MODELS[run.model] + '成型', action: 'form', tier: 1 };
     } else if (hit === 2 || run.skin.pattern === 'none') {
       change = mutate(run, hit === 2 ? 'metal' : 'pattern', type, roll, true);
     }
@@ -184,18 +300,21 @@ export function strike(run, zone) {
       if (!run.skin.levels.fx) run.skin.fx = 'none';
       change = { slot: 'fx', label: '特效退档', action: 'fade', tier: run.skin.levels.fx };
     }
-  } else if (!change && type === 'surge' && hit >= 12 && !run.changedShape && roll() < .14) {
-    run.model = roll() < .62 ? 'tangdao' : 'karambit';
+  } else if (!change && type === 'surge' && hit >= 12 && !run.changedShape && rngFor(run.seed, 'shape-trigger', hit)() < .14) {
+    run.model = pick(modelCandidates(run).rare, rngFor(run.seed, 'shape-pick', hit));
     run.changedShape = true;
     change = { slot: 'model', label: '异形 · ' + MODELS[run.model], action: 'form', tier: 3 };
-  } else if (!change && (type === 'surge' || (type === 'shift' && (run.idle >= 2 || roll() < .74)))) {
+  } else if (!change && (type === 'surge' || type === 'shift') && run.model !== 'blank') {
     change = mutate(run, chooseSlot(run, zone, type, roll), type, roll);
   }
-  run.idle = change ? 0 : run.idle + 1;
+  const mark = workSurface(run, type, position);
   run.work += ({ scar: -.6, polish: .8, shift: 1.35, surge: 2.4 })[type];
   const after = signature(run.skin);
-  if (hit === MAX_STRIKES) run.phase = 'fit';
-  return run.last = { type, hit, zone, risk, change, fusion: after !== before ? after : null, label: change?.label || (type === 'scar' ? '受损 · 裂痕显现' : '整面 · 钢面抛光') };
+  const fusion = after !== before ? after : null;
+  const notable = Boolean(fusion || change?.tier === 3 || change?.action === 'fade');
+  const label = change?.label || (type === 'scar' ? '崩口 · 裂痕显现' : type === 'surge' ? '暴发 · 局部精抛' : '整面 · 钢面抛光');
+  if (change || fusion || type === 'scar') run.highlights = [...run.highlights, { hit, label: fusion || label }].slice(-8);
+  return run.last = { type, hit, zone, risk, change, fusion, notable, label, mark };
 }
 
 export function finishForge(run) {
@@ -205,6 +324,13 @@ export function finishForge(run) {
 }
 
 export function fitOptions(run) {
+  if (!run.legacyFittings) {
+    return ['轻巧', '沉稳', '衬纹'].map(role => {
+      const options = FITS.filter(fit => fit.role === role);
+      const first = rngFor(run.seed, 'fitting-role', role)() < .5 ? 0 : 1;
+      return options[run.refreshed ? 1 - first : first];
+    });
+  }
   const roll = rngFor(run.seed, 'fittings');
   const ordered = FITS.map(fit => ({ fit, sort: roll() })).sort((a, b) => a.sort - b.sort).map(item => item.fit);
   return run.refreshed ? ordered.slice(3) : ordered.slice(0, 3);
@@ -230,7 +356,11 @@ export function appraise(save) {
   const grade = score >= 90 ? 4 : score >= 80 ? 3 : score >= 66 ? 2 : 1;
   const trait = signature(run.skin) || LOOKS.fx[run.skin.fx] || LOOKS.pattern[run.skin.pattern] || '原钢锻面';
   const credit = [0, 16, 23, 32, 48][grade];
-  run.record = { id: ++save.count, name: trait + ' · ' + MODELS[run.model], grade: grades[grade], stats, score, credit, hits: run.hits, model: run.model, fit: run.fit, skin: run.skin };
+  run.record = {
+    id: ++save.count, name: trait + ' · ' + MODELS[run.model], grade: grades[grade], stats, score, credit,
+    hits: run.hits, model: run.model, fit: run.fit, skin: run.skin, marks: run.marks,
+    ore: run.ore, refinement: run.refinement, highlights: run.highlights,
+  };
   save.credits += credit;
   save.collection = [run.record, ...save.collection].slice(0, 20);
   run.phase = 'appraise';
