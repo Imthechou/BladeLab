@@ -56,9 +56,15 @@ try {
   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
   let down = false;
   for (let n = 0; n < 210 && await step() === 'refine'; n++) {
-    const phase = await page.locator('#heat-step').innerText();
-    const temperature = Number((await page.locator('#heat-number').innerText()).replace('°', ''));
-    const desired = phase === '原石升温' || (phase === '熔球稳温' && (down ? temperature < 77 : temperature < 68));
+    // A cast can finish between two DOM reads; sample phase and temperature atomically.
+    const reading = await page.evaluate(() => ({
+      mode: document.querySelector('#stage')?.dataset.mode,
+      phase: document.querySelector('#heat-step')?.textContent ?? '',
+      temperature: Number(document.querySelector('#heat-number')?.textContent?.replace('°', '') ?? NaN),
+    }));
+    if (reading.mode !== 'refine') break;
+    const desired = reading.phase === '原石升温' ||
+      (reading.phase === '熔球稳温' && (down ? reading.temperature < 77 : reading.temperature < 68));
     if (desired && !down) { await page.mouse.down(); down = true; }
     else if (!desired && down) { await page.mouse.up(); down = false; }
     await page.waitForTimeout(75);
@@ -94,7 +100,11 @@ try {
   assert.ok(!glStatus.includes('3D 暂不可用'), '3D did not initialize');
   assert.deepEqual(errors, [], 'browser/GLSL console errors');
   console.log(JSON.stringify({ ok: true, viewports: ['390x844','375x812'], openedPrice: paid, finalCredits: await page.locator('#credits').innerText(), errors, screenshots: output }));
+} catch (error) {
+  await image('99-failure').catch(() => {});
+  console.error('Journey error:', error);
+  throw error;
 } finally {
-  if (errors.length) console.error(JSON.stringify({ errors }));
+  if (errors.length) console.error(JSON.stringify({ errors: errors.slice(0, 8), count: errors.length }));
   await browser.close();
 }
