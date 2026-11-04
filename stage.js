@@ -709,7 +709,8 @@ export class ForgeStage {
     this.camera.updateMatrixWorld();
     this.sweep.intensity = mode === 'reveal' ? revealFlash * 2.6 : inspect ? (mode === 'appraise' ? .45 + 1.1 * Math.exp(-elapsed / 820) : .58) : 0;
     this.sweep.position.x = mode === 'appraise' ? lerp(-2.8, 2.6, clamp(elapsed / 1500, 0, 1)) : .8;
-    this.key.intensity = mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.5 + revealFlash * .95 : 2.9;
+    this.key.color.set(stone && mode !== 'refine' ? 0xe8efff : 0xffcfad);
+    this.key.intensity = mode === 'ore' ? 2.45 : mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.45 + revealFlash * .85 : 2.9;
     const blow = this.blow;
     this.trail.visible = false;
     if (blow) {
