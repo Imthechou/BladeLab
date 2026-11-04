@@ -184,6 +184,15 @@ dialog::backdrop { background: #090807be; }
   .panel h1 { margin: 4px 0; font-size: 26px; }
   .panel p { font-size: 11px; }
   #readout { margin-block: 9px; }
+  .stage[data-mode="forge"] + .panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    gap: 9px;
+    align-items: start;
+  }
+  .stage[data-mode="forge"] + .panel .panel-top { grid-column: 1 / -1; }
+  .stage[data-mode="forge"] + .panel #readout { margin: 0; }
+  .stage[data-mode="forge"] + .panel .action-stack { margin-top: 0; }
   .info-block { padding: 8px 9px; gap: 4px; }
   .info-block strong { font-size: 13px; }
   .info-block p { font-size: 11px; }
