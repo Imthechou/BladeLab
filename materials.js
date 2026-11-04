@@ -1,4 +1,4 @@
-import { MARK_WIDTH, MARK_HEIGHT } from './forge.js?v=2';
+import { MARK_WIDTH, MARK_HEIGHT, familyOf } from './forge.js?v=3';
 
 const T = globalThis.THREE;
 const metalId = { raw: 0, silver: 1, pearl: 2, gunmetal: 3, obsidian: 4 };
@@ -18,6 +18,8 @@ export function surfaceUniforms() {
     fHeat: { value: 0 },
     fMarks: { value: marks },
     fPurity: { value: .65 },
+    fOreTone: { value: new T.Color('#879cab') },
+    fOreTrace: { value: .5 },
     fPulse: { value: 0 },
     fWave: { value: 0 },
     fHit: { value: new T.Vector3() },
@@ -35,6 +37,8 @@ export function setSurface(uniforms, run, fit) {
   uniforms.fLevels.value.set(skin.levels.metal, skin.levels.pattern, skin.levels.film, skin.levels.fx);
   uniforms.fSeed.value = skin.seed;
   uniforms.fPurity.value = (run.purity || run.ore?.purity || 65) / 100;
+  uniforms.fOreTone.value.set(familyOf(run.ore?.family).color);
+  uniforms.fOreTrace.value = (run.ore?.vein ?? 52) / 100;
   uniforms.fGrip.value.set(fit?.color || '#393f42');
   uniforms.fGuard.value.set(fit?.accent || '#858992');
   uniforms.fGripStyle.value = fit?.grip || 0;
@@ -69,9 +73,9 @@ vForgeNormal = normalize(normalMatrix * normal);
 
 const fragmentHead = `
 uniform vec4 fCodes, fLevels;
-uniform float fClock, fSeed, fHeat, fPurity, fPulse, fWave, fGripStyle, fFitted, fRaw;
+uniform float fClock, fSeed, fHeat, fPurity, fPulse, fWave, fGripStyle, fFitted, fRaw, fOreTrace;
 uniform sampler2D fMarks;
-uniform vec3 fGrip, fGuard, fHit;
+uniform vec3 fGrip, fGuard, fHit, fOreTone;
 varying vec4 vForge;
 varying vec3 vForgePos;
 varying vec3 vForgeNormal;
@@ -117,6 +121,10 @@ forgeRough += brush*.025 + (coarse-.5)*.14 - refine;
 float slag = smoothstep(.62,.91,forgeNoise(fp*vec2(49.,91.)+bend));
 steel *= 1.-(1.-fPurity)*slag*.42;
 forgeRough += (1.-fPurity)*slag*.14;
+// The mineral's original hue and grain survive refining, hammering and fittings.
+float inheritedGrain = forgeBand(fp.y*42. + sin(fp.x*13.+bend)*1.2 + coarse*.6, .08) * fOreTrace;
+steel = mix(steel, steel*(.73 + fOreTone*.59), .095 + inheritedGrain*.23);
+forgeRough += inheritedGrain*.032;
 float patternWeight = .56 + .12 * fLevels.y;
 float pat = 0.;
 float seam = 0.;
@@ -233,29 +241,62 @@ export function makeBladeMaterial(original, uniforms, raw) {
 
 export function makeOreMaterial(original, uniforms) {
   const material = new T.MeshStandardMaterial({
-    color: 0x8e7f76, map: original?.map || null, roughness: .88, metalness: .12, envMapIntensity: .5,
+    color: 0x928a7f, map: original?.map || null, roughness: .87, metalness: .14, envMapIntensity: .78,
   });
-  material.customProgramCacheKey = () => 'blade-lab-stone-1';
+  material.customProgramCacheKey = () => 'blade-lab-stone-strata-3';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = 'varying vec3 vOre;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvOre = position;');
-    shader.fragmentShader = `
-      uniform float oreSeed, oreReveal, oreGrade, oreHeat, oreClue;
+    shader.vertexShader = `varying vec3 vOre; varying vec3 vOreNormal;\n` +
+      shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\\nvOre = position; vOreNormal = normal;');
+    shader.fragmentShader = fragmentHead.slice(fragmentHead.indexOf('float forgeHash')) + `
+      uniform float oreSeed, oreReveal, oreGrade, oreHeat, oreClue, oreFamily, oreVein, oreFlaw, oreLuster;
       uniform vec3 oreTint;
-      varying vec3 vOre;
+      varying vec3 vOre, vOreNormal;
     ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       vec3 p = vOre;
-      float stepA = sin((p.x*.34+p.y*.71+p.z*.35)*58. + sin(p.x*19.+oreSeed*6.)*.7);
-      float ridge = smoothstep(.72,.97,stepA);
-      float strata = smoothstep(.15,.75,sin(p.y*31. + p.x*14. + oreSeed*8.));
-      float exposed = smoothstep(-.19,.24,p.z) * oreReveal;
-      float field = max(ridge*(.26+.19*oreClue),exposed*(.38+strata*.51));
-      float grain = .89+.10*sin(p.x*177.+p.y*237.)*sin(p.y*231.-p.z*168.);
-      vec3 rock = diffuseColor.rgb * (grain*.77+.23);
-      diffuseColor.rgb = mix(rock,oreTint * (.23+strata*.40+oreGrade*.16),field*.83);
-    `).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(.89,.43,field);')
-      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = mix(.11,.59,field);')
-      .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += oreTint * ridge * exposed * oreGrade * .038 + vec3(.91,.15,.022)*oreHeat*oreHeat*(.14+ridge*.67);');
+      float grain = forgeNoise(p.xy*vec2(31.,43.)+p.z*18.+oreSeed*17.);
+      float grains = forgeHash(floor(p.xy*vec2(183.,209.) + p.z*76. + oreSeed*61.));
+      float beds = p.y*36. + sin(p.x*15.+oreSeed*6.)*2. + forgeNoise(p.xz*16.)*2.;
+      float layer = forgeBand(beds,.115);
+      float jagged = forgeBand(p.y*68. + p.x*29. + sin(p.z*18.+oreSeed*7.)*4.,.05);
+      float crystalline = forgeNoise(p.xy*vec2(28.,39.) + p.z*19. + oreSeed*12.);
+      float facets = forgeHash(floor(p.xy*32. + p.z*13.));
+      float seams = smoothstep(.76,.97,crystalline)*smoothstep(.36,.82,grain);
+      float vein = oreVein * (.35 + .65*max(layer,seams));
+      float fissure = (1.-smoothstep(.055,.17,abs(sin(beds*.39+p.z*17.)))) * oreFlaw;
+      float porous = smoothstep(.66,.92,grain) * (1.-oreLuster*.47);
+      float face = clamp(dot(normalize(vOreNormal),normalize(vec3(.24,.72,.52)))*.5+.5,.0,1.);
+      vec3 base = mix(vec3(.095,.093,.097),vec3(.29,.27,.265),grain*.76+face*.15);
+      float showMetal = .0;
+      if (oreFamily < .5) {
+        base = mix(base,vec3(.23,.29,.32),.42);
+        showMetal = max(layer*.77,seams*.43) * (.20+.66*oreVein);
+      } else if (oreFamily < 1.5) {
+        base = mix(base,vec3(.19,.31,.32),.44);
+        showMetal = max(seams*.95, facets*.30*layer) * (.16+.72*oreVein);
+        base += facets*.047;
+      } else if (oreFamily < 2.5) {
+        base = mix(base,vec3(.27,.19,.16),.46);
+        showMetal = max(jagged*.72,seams*.34) * (.18+.64*oreVein);
+        base *= 1. - porous*.33;
+      } else {
+        base = mix(base,vec3(.17,.16,.25),.48);
+        showMetal = max(seams*.65,layer*.44) * (.20+.70*oreVein);
+        base += smoothstep(.987,.998,grains) * .095;
+      }
+      float glint = smoothstep(.968,.999,grains) * oreLuster * vein;
+      float metal = clamp(showMetal*.74 + glint*.7,0.,.88);
+      diffuseColor.rgb = mix(base,oreTint*(.41+.40*grain)+vec3(.085),metal);
+      diffuseColor.rgb += oreTint*glint*.20;
+      diffuseColor.rgb *= 1. - fissure*(.16+.28*oreFlaw);
+      diffuseColor.rgb *= .80 + .22*grain;
+    `).replace('#include <roughnessmap_fragment>', `
+      float roughnessFactor = clamp(.91 - metal*.53 + fissure*.16 + porous*.08 - glint*.16,.25,.99);
+    `).replace('#include <metalnessmap_fragment>', 'float metalnessFactor = mix(.08,.78,metal);')
+      .replace('#include <emissivemap_fragment>', `
+        totalEmissiveRadiance += oreTint * (glint*.055 + oreReveal*oreGrade*metal*.095)
+          + vec3(.91,.15,.022)*oreHeat*oreHeat*(.09+jagged*.62);
+      `);
   };
   return material;
 }
@@ -284,29 +325,39 @@ export function makeMeltMaterial(uniforms) {
 
 export function makeCutMaterial(uniforms) {
   const material = new T.MeshStandardMaterial({
-    color: 0xffffff, roughness: .43, metalness: .52, envMapIntensity: 1.02, side: T.DoubleSide,
+    color: 0xffffff, roughness: .34, metalness: .64, envMapIntensity: 1.24, side: T.DoubleSide,
   });
-  material.customProgramCacheKey = () => 'blade-lab-ore-cross-section';
+  material.customProgramCacheKey = () => 'blade-lab-ore-cross-section-3';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.fragmentShader = fragmentHead.slice(fragmentHead.indexOf('float forgeHash')) + `
-      uniform float oreSeed, oreGrade;
+      uniform float oreSeed, oreGrade, oreFamily, orePurity, oreVein, oreFlaw, oreLuster;
       uniform vec3 oreTint;
       varying vec3 vSection;
     ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       vec2 p = vSection.yz;
-      float noise = forgeNoise(p*vec2(19.,16.)+oreSeed*11.);
-      float fiber = sin(p.y*65.+p.x*26.+sin(p.x*13.+oreSeed*5.)*2.2+noise*2.);
-      float band = smoothstep(.03,.83,fiber);
-      float speck = forgeHash(floor(p*137.));
-      float stone = mix(.055,.18,noise);
-      vec3 mineral = mix(oreTint*.27,oreTint*1.23,smoothstep(.23,.82,noise));
-      float exposure = (.27+.18*oreGrade)*band;
-      diffuseColor.rgb = mix(vec3(stone*.96,stone*.84,stone*.76),mineral,exposure)
-        + oreTint*smoothstep(.976,.999,speck)*band*(.29+oreGrade*.19);
-    `).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(.66,.25,band*.87);')
-      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = mix(.18,.77,exposure);');
-    shader.vertexShader = 'varying vec3 vSection;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvSection = position;');
+      float n = forgeNoise(p*vec2(17.,19.)+oreSeed*12.);
+      float facets = forgeHash(floor(p*36.+oreSeed*17.));
+      float fine = forgeHash(floor(p*178.+oreSeed*23.));
+      float seam = p.y*57. + p.x*22. + sin(p.x*15.+oreSeed*5.)*2.7 + n*2.9;
+      float ribbon = forgeBand(seam,.105);
+      float twin = forgeBand(seam*.56 + sin(p.y*27.)*.60,.083);
+      float crystal = max(forgeBand(p.x*43.+p.y*29.,.06),forgeBand(p.y*52.-p.x*34.,.052));
+      float flow = forgeBand(p.y*31. + sin(p.x*22.+oreSeed*7.)*1.7,.048);
+      float field = oreFamily < .5 ? max(ribbon,twin*.72)
+        : oreFamily < 1.5 ? max(crystal,facets*.24)
+        : oreFamily < 2.5 ? max(flow,ribbon*.42) : max(twin*.85,ribbon*.42);
+      float matrix = mix(.095,.22,n)*(.86+.20*orePurity);
+      float valuable = clamp(field*(.29+.62*oreVein+.11*oreGrade),0.,1.);
+      vec3 core = mix(vec3(matrix*.91,matrix*.89,matrix*.88),
+        oreTint * (.68+.48*facets)+vec3(.08),valuable);
+      core += oreTint*smoothstep(.981,.999,fine)*field*(.22+.22*oreGrade);
+      core *= 1.-(1.-orePurity)*smoothstep(.72,.94,n)*.32;
+      diffuseColor.rgb = core;
+    `).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = clamp(.68 - valuable*.45 + (1.-orePurity)*.11,.19,.85);')
+      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = mix(.17,.86,valuable);')
+      .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += oreTint * valuable * oreGrade * .035;');
+    shader.vertexShader = 'varying vec3 vSection;\\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\\nvSection = position;');
   };
   return material;
 }
