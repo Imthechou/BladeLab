@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101111">
+  <title>BladeLab · 锻刀工坊</title>
+  <meta name="description" content="从一块未知的矿石，打出只属于这一炉的刀。">
+  <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="assets/vendor/three.bundle.js"></script>
+  <script defer src="assets/vendor/three.addons.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="header frame">
+    <div class="identity">
+      <img src="assets/mark.svg" alt="" width="38" height="38">
+      <div><strong>BLADE<span>LAB</span></strong><small>独立锻造实验室</small></div>
+    </div>
+    <div class="header-tools">
+      <button class="quiet icon-button" id="sound" type="button" aria-label="静音" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Zm4 4a4 4 0 0 1 0 6m2-8a7 7 0 0 1 0 10"/></svg>
+      </button>
+      <button class="quiet icon-button" id="collection" type="button" aria-label="藏刀记录">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 5h14v14H5zM8 5V3m8 2V3M8 21v-2m8 2v-2m-7-6 5-5 2 2-5 5-3 1z"/></svg>
+      </button>
+      <div class="wallet" aria-label="信用点余额"><span class="coin">◇</span><b id="credits">—</b><small>信用点</small></div>
+    </div>
+  </header>
+
+  <main class="frame">
+    <nav class="steps" id="steps" aria-label="锻造进度"></nav>
+    <div class="workspace">
+      <section class="stage" id="stage" aria-label="3D 工作台">
+        <canvas id="scene" aria-label="3D 刀具与原料预览"></canvas>
+        <div class="stage-top">
+          <div><span id="stage-code" class="stage-code">STATION 01</span><b id="stage-name">原石检视台</b></div>
+          <span class="live"><i></i><span id="stage-state">实物预览</span></span>
+        </div>
+        <div class="stage-message" id="stage-message" aria-hidden="true"></div>
+        <div class="stage-footer"><span id="stage-hint">拖动旋转检视</span><span class="stage-scale"><i></i> LIVE MODEL</span></div>
+      </section>
+
+      <section class="panel" id="panel" aria-labelledby="title">
+        <div class="panel-top">
+          <div class="eyebrow" id="eyebrow"></div>
+          <h1 id="title"></h1>
+          <p id="description"></p>
+        </div>
+        <div id="readout"></div>
+        <div class="action-stack" id="actions"></div>
+      </section>
+    </div>
+    <section id="tray" class="tray" aria-label="工作台选项"></section>
+    <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
+    <footer class="footer"><span>BLADE LAB / FORGE BUILD 01</span><span>一炉一刃</span></footer>
+  </main>
+
+  <dialog id="vault">
+    <div class="vault-head"><div><div class="eyebrow">THE ARCHIVE</div><h2>藏刀记录</h2></div><button class="quiet icon-button" type="button" id="close-vault" aria-label="关闭">×</button></div>
+    <div id="vault-list"></div>
+  </dialog>
+</body>
+</html>
