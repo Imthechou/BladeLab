@@ -209,3 +209,9 @@ dialog::backdrop { background: #090807be; }
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; }
   .stage-message.show { animation: announce .6s step-end both; }
 }
+#device-qa { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+#device-qa summary { cursor: pointer; font-weight: 750; }
+#device-qa p { color: var(--muted); font-size: 12px; line-height: 1.55; }
+#device-qa nav { display: flex; gap: 8px 14px; flex-wrap: wrap; }
+#device-qa a { color: var(--accent-bright); padding-block: 6px; font-size: 13px; }
+#device-qa textarea { width: 100%; min-height: 180px; margin-top: 8px; color: var(--ink); background: var(--base); border: 1px solid var(--line); }

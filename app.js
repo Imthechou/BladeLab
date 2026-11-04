@@ -3,8 +3,9 @@ import {
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature,
 } from './forge.js?v=2';
-import { ForgeStage } from './stage.js?v=2';
+import { ForgeStage } from './stage.js?v=2.1';
 import { ForgeSound } from './sound.js?v=2';
+import { createQaSession } from './qa.js?v=2.1';
 
 const get = id => document.getElementById(id);
 const canvas = get('scene');
@@ -14,6 +15,7 @@ const tray = get('tray');
 const readout = get('readout');
 const msg = get('stage-message');
 const sound = new ForgeSound();
+const qa = createQaSession(new URLSearchParams(location.search).get('qa'));
 const stepNames = ['选料', '精炼', '锻打', '装配', '鉴定'];
 const stationNames = ['原石检视台', '精炼炉口', '锻造铁砧', '装配工作台', '成刀展台'];
 const roman = ['', ' I', ' II', ' III'];
@@ -33,6 +35,7 @@ let webglError = false;
 let storageFailed = false;
 
 function restore() {
+  if (qa) return qa.save;
   try {
     return migrateSave(JSON.parse(localStorage.getItem(STORAGE_KEY))) || freshSave();
   } catch {}
@@ -40,6 +43,7 @@ function restore() {
 }
 
 function persist() {
+  if (qa) return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(save));
   } catch {
@@ -70,6 +74,7 @@ function lookChips(run) {
 function render() {
   const run = save.run;
   const { phase } = run;
+  qa?.phase(phase);
   const navPhase = phase === 'reveal' ? 'ore' : phase === 'broken' ? 'forge' : phase;
   const idx = PHASES.indexOf(navPhase);
   const ore = phase === 'ore' ? offers(run)[run.selected] : run.ore;
@@ -264,12 +269,17 @@ function releaseHeat() {
 function hitBlade(hit) {
   if (!hit || save.run.phase !== 'forge' || queuedStop) return;
   if (busy) {
-    if (stage.blow?.landed && !resultPause) queuedHit = hit;
+    if (stage.blow?.landed && !resultPause) {
+      if (qa) hit.buffered = true;
+      queuedHit = hit;
+    }
     return;
   }
   sound.unlock();
   const result = strike(save.run, hit.zone, hit.position);
   if (!result) return;
+  qa?.input();
+  qa?.result(result);
   busy = true;
   persist();
   resultPause = result.notable;
@@ -317,6 +327,7 @@ document.addEventListener('click', event => {
   }
   sound.unlock();
   const { action, id } = control.dataset;
+  if (['ore-prev', 'ore-next', 'next-batch', 'buy'].includes(action)) qa?.input();
   const run = save.run;
   let message;
   if (['ore-prev', 'ore-next'].includes(action) && run.phase === 'ore') {
@@ -341,6 +352,7 @@ document.addEventListener('click', event => {
     sound.play('appraise');
     message = run.record.grade + ' · ' + run.record.score;
   } else if (action === 'restart' && restart(save, Date.now() + save.count)) {
+    qa?.reset();
     message = '新一炉';
   } else return;
   persist();
@@ -378,7 +390,9 @@ document.addEventListener('keydown', event => {
     charge();
   } else if (event.key === ' ' && save.run.phase === 'forge' && event.target.tagName !== 'BUTTON') {
     event.preventDefault();
-    hitBlade(stage?.keyboardHit());
+    const hit = stage?.keyboardHit();
+    if (hit && qa) hit.pressedAt = performance.now();
+    hitBlade(hit);
   }
 });
 document.addEventListener('keyup', event => {
@@ -388,7 +402,12 @@ document.addEventListener('keyup', event => {
 canvas.addEventListener('pointerdown', event => {
   if (!event.isPrimary || !stage) return;
   if (save.run.phase === 'forge') {
-    hitBlade(stage.hit(event.clientX, event.clientY));
+    const hit = stage.hit(event.clientX, event.clientY);
+    if (hit && qa) {
+      const now = performance.now();
+      hit.pressedAt = event.timeStamp > 0 && event.timeStamp <= now ? event.timeStamp : now;
+    }
+    hitBlade(hit);
   } else if (['ore', 'reveal', 'fit', 'appraise'].includes(save.run.phase)) {
     canvas.setPointerCapture(event.pointerId);
     drag = { id: event.pointerId, x: event.clientX, y: event.clientY };
@@ -422,10 +441,12 @@ function showError(error) {
 
 try {
   stage = new ForgeStage(canvas);
+  if (qa) stage.observeFrame = qa.frame;
   stage.prepare().catch(showError);
   canvas.tabIndex = 0;
 } catch (error) {
   showError(error);
 }
 render();
+qa?.install();
 if (save.run.phase === 'refine' && (save.run.refining.elapsed > 0 || save.run.refining.step !== 'ore')) startHeat(false);

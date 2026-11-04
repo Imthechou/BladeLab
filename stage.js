@@ -704,5 +704,6 @@ export class ForgeStage {
     this.animateOreCut(elapsed);
     this.animateSparks(dt);
     this.renderer.render(this.scene, this.camera);
+    this.observeFrame?.(performance.now(), delta, mode, blow);
   };
 }
