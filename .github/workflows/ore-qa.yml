@@ -1,0 +1,51 @@
+name: BladeLab mineral selection QA
+on:
+  push:
+    branches: [feat/ore-gambling-v3]
+  pull_request:
+    paths:
+      - "forge.js"
+      - "materials.js"
+      - "stage.js"
+      - "app.js"
+      - "styles.css"
+      - "test/**"
+      - "scripts/qa-ore.mjs"
+      - ".github/workflows/ore-qa.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mobile-ore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests
+        run: npm test
+      - name: Install headless Chromium
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Start game
+        run: |
+          npm start > /tmp/bladelab-server.log 2>&1 &
+          echo $! > /tmp/bladelab-server.pid
+          for i in $(seq 1 40); do
+            if curl --silent --fail http://127.0.0.1:8217/ > /dev/null; then exit 0; fi
+            sleep 0.25
+          done
+          cat /tmp/bladelab-server.log
+          exit 1
+      - name: Mobile journey and WebGL smoke
+        run: node scripts/qa-ore.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bladelab-ore-mobile-screens
+          path: artifacts/ore-mobile
+          if-no-files-found: ignore
+          retention-days: 7
