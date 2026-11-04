@@ -247,7 +247,7 @@ export function makeOreMaterial(original, uniforms) {
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = `varying vec3 vOre; varying vec3 vOreNormal;\n` +
-      shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\\nvOre = position; vOreNormal = normal;');
+      shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvOre = position; vOreNormal = normal;');
     shader.fragmentShader = fragmentHead.slice(fragmentHead.indexOf('float forgeHash')) + `
       uniform float oreSeed, oreReveal, oreGrade, oreHeat, oreClue, oreFamily, oreVein, oreFlaw, oreLuster;
       uniform vec3 oreTint;
@@ -357,7 +357,7 @@ export function makeCutMaterial(uniforms) {
     `).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = clamp(.68 - valuable*.45 + (1.-orePurity)*.11,.19,.85);')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = mix(.17,.86,valuable);')
       .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += oreTint * valuable * oreGrade * .035;');
-    shader.vertexShader = 'varying vec3 vSection;\\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\\nvSection = position;');
+    shader.vertexShader = 'varying vec3 vSection;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvSection = position;');
   };
   return material;
 }
