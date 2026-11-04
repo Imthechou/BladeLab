@@ -1,6 +1,6 @@
-import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js';
-import { familyOf, HEAT, modelCandidates } from './forge.js';
-import { KNIFE_IDS, regionAt } from './regions.js';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=2';
+import { familyOf, HEAT, modelCandidates } from './forge.js?v=2';
+import { KNIFE_IDS, regionAt } from './regions.js?v=2';
 
 const T = globalThis.THREE;
 const modelFiles = {

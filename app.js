@@ -2,9 +2,9 @@ import {
   STORAGE_KEY, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, MODELS, LOOKS, FITS, STAT_NAMES,
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature,
-} from './forge.js';
-import { ForgeStage } from './stage.js';
-import { ForgeSound } from './sound.js';
+} from './forge.js?v=2';
+import { ForgeStage } from './stage.js?v=2';
+import { ForgeSound } from './sound.js?v=2';
 
 const get = id => document.getElementById(id);
 const canvas = get('scene');
