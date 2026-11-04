@@ -26,6 +26,13 @@ export const MODELS = {
   gladius: '短剑', kris: '马来剑', machete: '开山刀', saber: '弯刀', skull: '骷髅匕首',
 };
 export const GRADES = ['普通', '良质', '稀质'];
+export const ORE_TIERS = ['工坊料', '精选料', '珍藏料'];
+export const RARE_ODDS = [5, 12, 22];
+export const oreSignals = ore => ({
+  vein: (ore.vein ?? Math.round((ore.purity ?? 62) * .8)) >= 72 ? '矿脉浓密' : (ore.vein ?? Math.round((ore.purity ?? 62) * .8)) >= 48 ? '矿脉可辨' : '矿脉稀疏',
+  shell: (ore.flaw ?? Math.round(90 - (ore.stability ?? 60))) >= 55 ? '暗裂偏多' : (ore.flaw ?? Math.round(90 - (ore.stability ?? 60))) >= 35 ? '石皮有裂' : '石皮完整',
+  glow: (ore.luster ?? 45) >= 69 ? '断口明亮' : (ore.luster ?? 45) >= 43 ? '断口微光' : '断口暗哑',
+});
 export const STAT_NAMES = ['强度', '韧性', '锋利', '工艺', '设计', '灵性'];
 export const FITS = [
   { id: 'walnut', role: '沉稳', name: '赤木束柄', parts: '胡桃木 · 铜色端箍', color: '#673424', accent: '#bc8555', grip: 1, delta: [0, 5, 0, 3, 2, 0] },
@@ -121,11 +128,16 @@ export function offers(run) {
     const quality = roll();
     const grade = quality < ordinary ? 0 : quality < good ? 1 : 2;
     const [lo, hi] = purityBands[grade];
-    const clue = Math.floor(roll() * 3);
     const figure = roll();
     const purity = lo + Math.floor(roll() * (hi - lo + 1));
     const stability = centers[family.id] + Math.floor(roll() * 19) - 9;
-    return { id, family: family.id, price, grade, clue, figure, purity, stability, tier, number: String(id + 1).padStart(2, '0') };
+    // Surface indications track the hidden deposit with overlap: inspecting matters,
+    // but the true grade, purity and stability are never guaranteed by appearance.
+    const vein = clamp(Math.round(purity * .78 + grade * 5 + (roll() - .5) * 43), 9, 98);
+    const flaw = clamp(Math.round(77 - stability * .66 + (roll() - .5) * 37), 5, 92);
+    const luster = clamp(Math.round(purity * .63 + grade * 8 + (roll() - .5) * 44), 8, 98);
+    const clue = vein >= 72 ? 2 : vein >= 48 ? 1 : 0;
+    return { id, family: family.id, price, grade, clue, figure, purity, stability, tier, vein, flaw, luster, number: String(id + 1).padStart(2, '0') };
   });
 }
 
@@ -151,6 +163,8 @@ export function buyOre(save) {
   if (!ore || save.credits < ore.price) return false;
   save.credits -= ore.price;
   run.ore = ore;
+  // Identical decisions on two distinct stones no longer produce identical grain.
+  run.skin.seed = rngFor(run.seed, 'ore-grain', ore.id, ore.family, ore.figure)();
   run.phase = 'reveal';
   return true;
 }
