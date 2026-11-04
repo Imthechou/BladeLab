@@ -1,5 +1,5 @@
-import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=2';
-import { familyOf, HEAT, modelCandidates } from './forge.js?v=2';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=3';
+import { familyOf, HEAT, modelCandidates } from './forge.js?v=3';
 import { KNIFE_IDS, regionAt } from './regions.js?v=2';
 
 const T = globalThis.THREE;
@@ -9,6 +9,7 @@ const modelFiles = {
 };
 const doubleEdge = new Set(['gladius', 'kris', 'skull']);
 const oreProfiles = { river: [1.75, 1.29, 1.63], frost: [1.36, 1.68, 1.45], coal: [1.69, 1.37, 1.56], meteor: [1.46, 1.56, 1.63] };
+const familyOrder = ['river', 'frost', 'coal', 'meteor'];
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -251,6 +252,8 @@ export class ForgeStage {
     this.oreUniforms = {
       oreTint: { value: new T.Color() }, oreSeed: { value: 0 },
       oreReveal: { value: 0 }, oreGrade: { value: 0 }, oreHeat: { value: 0 }, oreClue: { value: 0 },
+      oreFamily: { value: 0 }, oreVein: { value: .5 }, oreFlaw: { value: .5 },
+      oreLuster: { value: .5 }, orePurity: { value: .6 },
     };
     this.meltUniforms = { meltClock: { value: 0 }, meltHeat: { value: .65 }, meltClean: { value: 0 }, meltTint: { value: new T.Color() } };
     this.mode = 'ore';
@@ -275,7 +278,8 @@ export class ForgeStage {
     const pending = this.loader.loadAsync(url.href).then(({ scene }) => {
       let source;
       scene.traverse(obj => { if (obj.isMesh && !source) source = obj; });
-      const { geometry } = source;
+      const geometry = id === 'ore' ? source.geometry.clone() : source.geometry;
+      if (id === 'ore') this.oreBase = Float32Array.from(geometry.attributes.position.array);
       const process = id === 'ore' || id === 'molten';
       const coords = process ? null : coordinates(geometry, id);
       const uniforms = id === 'ore' ? this.oreUniforms : id === 'molten' ? this.meltUniforms : surfaceUniforms();
@@ -363,10 +367,16 @@ export class ForgeStage {
     }
     this.refiningStep = run.refining?.step;
     if (ore) {
+      this.inspectedOre = ore;
       this.oreUniforms.oreTint.value.set(familyOf(ore.family).color);
       this.oreUniforms.oreSeed.value = ore.figure;
       this.oreUniforms.oreClue.value = ore.clue / 2;
       this.oreUniforms.oreGrade.value = this.mode === 'reveal' ? ore.grade : 0;
+      this.oreUniforms.oreFamily.value = Math.max(0, familyOrder.indexOf(ore.family));
+      this.oreUniforms.oreVein.value = (ore.vein ?? 52) / 100;
+      this.oreUniforms.oreFlaw.value = (ore.flaw ?? 43) / 100;
+      this.oreUniforms.oreLuster.value = (ore.luster ?? 50) / 100;
+      this.oreUniforms.orePurity.value = (ore.purity ?? 60) / 100;
       this.stoneShape = ore.figure;
       this.stoneFamily = ore.family;
       this.meltUniforms.meltTint.value.set(familyOf(ore.family).color);
@@ -381,8 +391,36 @@ export class ForgeStage {
     }
   }
 
+  // Re-sculpt the existing GLB once per inspected stone. No per-frame mesh allocation.
+  sculptOre(ore) {
+    if (!ore || !this.oreBase || !this.cache.has('ore')) return;
+    const key = `${ore.id}/${ore.figure}/${ore.family}`;
+    if (this.oreSculptKey === key) return;
+    this.clearOrePieces();
+    if (this.oreCutGeometry) { this.oreCutGeometry.dispose(); this.oreCutGeometry = null; }
+    const geometry = this.cache.get('ore').mesh.geometry;
+    const attr = geometry.attributes.position;
+    const original = this.oreBase;
+    const seed = ore.figure * 18.7 + ore.id * 1.77;
+    const rough = [0.035, 0.095, 0.055, 0.075][familyOrder.indexOf(ore.family)] ?? .055;
+    for (let i = 0; i < attr.count; i++) {
+      const index = i * 3;
+      const x = original[index], y = original[index + 1], z = original[index + 2];
+      const ridges = Math.sin(x * 19.3 + y * 9.7 + seed) * Math.cos(z * 16.4 - y * 6.3 + seed);
+      const chips = Math.sin(x * 51.2 + z * 31.1 + seed) * Math.sin(y * 37.6 - z * 12.3);
+      const shape = 1 + rough * ridges + .027 * chips + .037 * Math.sin(x * 5.3 + y * 7.9 + seed);
+      attr.setXYZ(i, x * shape, y * shape, z * shape);
+    }
+    attr.needsUpdate = true;
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    this.oreSculptKey = key;
+  }
+
   show(id) {
     if (!this.cache.has(id)) return;
+    if (id === 'ore') this.sculptOre(this.inspectedOre);
     const asset = this.cache.get(id);
     if (this.shown !== id) {
       if (this.mesh) this.content.remove(this.mesh);
@@ -664,12 +702,14 @@ export class ForgeStage {
     this.anvil.position.set(.10, (narrow ? -.91 : -.78) - compression * .35, -.42);
     this.anvil.rotation.z = .11;
     this.hammer.visible = mode === 'forge' || !!this.blow;
-    this.flash.intensity = impulse * (strikeAge < 33 ? 3.7 : 1.15);
+    this.flash.intensity = mode === 'reveal' ? revealFlash * 3.1 : impulse * (strikeAge < 33 ? 3.7 : 1.15);
+    if (mode === 'reveal') this.flash.position.set(0, .1, .8);
     this.camera.position.x = !this.reduceMotion && this.lastImpact?.large ? Math.sin(strikeAge / 19) * impulse * .035 : 0;
     this.camera.updateMatrixWorld();
-    this.sweep.intensity = inspect ? (mode === 'appraise' ? .45 + 1.1 * Math.exp(-elapsed / 820) : .58) : 0;
+    const revealFlash = mode === 'reveal' && !this.reduceMotion ? Math.exp(-Math.pow((elapsed - 460) / 180, 2)) : 0;
+    this.sweep.intensity = mode === 'reveal' ? revealFlash * 2.6 : inspect ? (mode === 'appraise' ? .45 + 1.1 * Math.exp(-elapsed / 820) : .58) : 0;
     this.sweep.position.x = mode === 'appraise' ? lerp(-2.8, 2.6, clamp(elapsed / 1500, 0, 1)) : .8;
-    this.key.intensity = mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : 2.9;
+    this.key.intensity = mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.5 + revealFlash * .95 : 2.9;
     const blow = this.blow;
     this.trail.visible = false;
     if (blow) {
