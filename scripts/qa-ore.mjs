@@ -28,7 +28,12 @@ try {
   assert.equal(await page.locator('.ore-card').count(), 3);
   assert.ok((await overflow()) <= 2, 'selection causes horizontal overflow');
   await image('01-inspect-390');
-
+  await page.locator('.ore-card').nth(1).click();
+  await page.waitForTimeout(240);
+  await image('01b-second-stone-390');
+  await page.locator('.ore-card').nth(2).click();
+  await page.waitForTimeout(240);
+  await image('01c-third-stone-390');
   await page.locator('.ore-card').nth(1).click();
   assert.match(await page.locator('#ore-position').innerText(), /2 \/ 3/);
   const paid = Number((await page.locator('[data-action="buy"]').innerText()).match(/(\d+) CR/)?.[1]);
