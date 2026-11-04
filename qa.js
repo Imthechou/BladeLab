@@ -1,4 +1,4 @@
-import { advanceHeat, beginRefining, buyOre, freshSave, strike } from './forge.js?v=2';
+import { advanceHeat, beginRefining, buyOre, freshSave, strike } from './forge.js?v=3';
 
 const scenarios = { full: '完整一炉', rare: '下一锤异形', break: '下一锤断裂' };
 
