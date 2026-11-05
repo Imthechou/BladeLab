@@ -1,4 +1,4 @@
-import { MARK_WIDTH, MARK_HEIGHT, familyOf } from './forge.js?v=4';
+import { MARK_WIDTH, MARK_HEIGHT, familyOf, oreMaterialOf } from './forge.js?v=4';
 
 const T = globalThis.THREE;
 const metalId = { raw: 0, silver: 1, pearl: 2, gunmetal: 3, obsidian: 4 };
@@ -20,6 +20,7 @@ export function surfaceUniforms() {
     fPurity: { value: .65 },
     fOreTone: { value: new T.Color('#879cab') },
     fOreTrace: { value: .5 },
+    fOreStyle: { value: 0 },
     fPulse: { value: 0 },
     fWave: { value: 0 },
     fHit: { value: new T.Vector3() },
@@ -37,8 +38,10 @@ export function setSurface(uniforms, run, fit) {
   uniforms.fLevels.value.set(skin.levels.metal, skin.levels.pattern, skin.levels.film, skin.levels.fx);
   uniforms.fSeed.value = skin.seed;
   uniforms.fPurity.value = (run.purity || run.ore?.purity || 65) / 100;
-  uniforms.fOreTone.value.set(familyOf(run.ore?.family).color);
+  const sourceMineral = oreMaterialOf(run.ore);
+  uniforms.fOreTone.value.set(sourceMineral.vein || familyOf(run.ore?.family).color);
   uniforms.fOreTrace.value = (run.ore?.vein ?? 52) / 100;
+  uniforms.fOreStyle.value = sourceMineral.style / 11;
   uniforms.fGrip.value.set(fit?.color || '#393f42');
   uniforms.fGuard.value.set(fit?.accent || '#858992');
   uniforms.fGripStyle.value = fit?.grip || 0;
@@ -73,7 +76,7 @@ vForgeNormal = normalize(normalMatrix * normal);
 
 const fragmentHead = `
 uniform vec4 fCodes, fLevels;
-uniform float fClock, fSeed, fHeat, fPurity, fPulse, fWave, fGripStyle, fFitted, fRaw, fOreTrace;
+uniform float fClock, fSeed, fHeat, fPurity, fPulse, fWave, fGripStyle, fFitted, fRaw, fOreTrace, fOreStyle;
 uniform sampler2D fMarks;
 uniform vec3 fGrip, fGuard, fHit, fOreTone;
 varying vec4 vForge;
@@ -122,7 +125,7 @@ float slag = smoothstep(.62,.91,forgeNoise(fp*vec2(49.,91.)+bend));
 steel *= 1.-(1.-fPurity)*slag*.42;
 forgeRough += (1.-fPurity)*slag*.14;
 // The mineral's original hue and grain survive refining, hammering and fittings.
-float inheritedGrain = forgeBand(fp.y*42. + sin(fp.x*13.+bend)*1.2 + coarse*.6, .08) * fOreTrace;
+float inheritedGrain = forgeBand(fp.y*(38.+fOreStyle*13.) + sin(fp.x*(12.+fOreStyle*7.)+bend+fOreStyle*3.)*1.2 + coarse*.6, .08) * fOreTrace;
 steel = mix(steel, steel*(.73 + fOreTone*.59), .095 + inheritedGrain*.23);
 forgeRough += inheritedGrain*.032;
 float patternWeight = .56 + .12 * fLevels.y;
