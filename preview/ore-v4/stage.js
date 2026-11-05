@@ -254,6 +254,9 @@ export class ForgeStage {
     this.sweep = light(0xe9fbff, 0, -2.7, 1.5, 1.5, this.scene);
     this.flash = new T.PointLight(0xff8b44, 0, 3, 1.8);
     this.scene.add(this.flash);
+    this.cutFill = new T.PointLight(0xf3e7d7, 0, 5.5, 1.65);
+    this.cutFill.position.set(0, .35, 2.7);
+    this.scene.add(this.cutFill);
     this.content = new T.Group();
     this.content.position.y = .13;
     this.scene.add(this.content);
@@ -714,6 +717,7 @@ export class ForgeStage {
     this.anvil.rotation.z = .11;
     this.hammer.visible = mode === 'forge' || !!this.blow;
     const revealFlash = mode === 'reveal' && !this.reduceMotion ? Math.exp(-Math.pow((elapsed - 630) / 185, 2)) : 0;
+    this.cutFill.intensity = mode === 'reveal' ? 1.35 + revealFlash * .25 : 0;
     this.flash.intensity = mode === 'reveal' ? revealFlash * 3.1 : impulse * (strikeAge < 33 ? 3.7 : 1.15);
     if (mode === 'reveal') this.flash.position.set(0, .1, .8);
     this.camera.position.x = !this.reduceMotion && this.lastImpact?.large ? Math.sin(strikeAge / 19) * impulse * .035 : 0;

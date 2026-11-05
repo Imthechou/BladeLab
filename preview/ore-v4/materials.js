@@ -392,12 +392,12 @@ export function makeCutMaterial(uniforms) {
       vec3 cutBark = oreBaseColor*(.40+.22*n+.10*fine);
       core = mix(core,cutBark,rim*.94);
       diffuseColor.rgb = core;
-      float cutMetal = mix(clamp(.13+coverage*.59+highlight*.19,.10,.78),.045,rim*.96);
-      float cutRough = mix(clamp(.85-coverage*.50+(.9-orePurity)*.06,.27,.90),.96,rim*.90);
+      float cutMetal = mix(clamp(.07+coverage*.40+highlight*.14,.07,.57),.045,rim*.96);
+      float cutRough = mix(clamp(.87-coverage*.38+(.9-orePurity)*.06,.38,.93),.97,rim*.90);
     `).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = cutRough;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = cutMetal;')
       .replace('#include <emissivemap_fragment>',
-        'totalEmissiveRadiance += oreVeinColor * highlight * quality * .023 * (1.-rim);');
+        'totalEmissiveRadiance += (oreBaseColor*(.065+.035*quality) + oreVeinColor*highlight*quality*.028) * (1.-rim*.45);');
     shader.vertexShader = 'varying vec3 vSection;\nattribute float cutRim;\nvarying float vCutRim;\n' +
       shader.vertexShader.replace('#include <begin_vertex>',
         '#include <begin_vertex>\nvSection = position; vCutRim = cutRim;');
