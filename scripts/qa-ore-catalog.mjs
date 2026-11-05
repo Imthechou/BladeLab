@@ -37,6 +37,7 @@ try{
  for(const family of families){
    await page.locator(`button[data-action="family"][data-id="${family}"]`).click();
    await page.waitForTimeout(350);
+   await page.evaluate(() => scrollTo(0,0));
    const shot=`${out}/rock-${family}.png`;
    await page.screenshot({path:shot,animations:'disabled'});
    for(let variant=0;variant<4;variant++){
@@ -55,6 +56,7 @@ try{
    await page.locator(`button[data-action="grade"][data-id="${grade}"]`).click();
    if(grade===0)await page.locator('button[data-action="toggle"]').click();
    await page.waitForTimeout(760);
+   await page.evaluate(() => scrollTo(0,0));
    await page.screenshot({path:`${out}/split-${label}.png`,animations:'disabled'});
  }
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth);
