@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { buildOreGlb } from '../scripts/ore-geometry.mjs';
 import { FAMILIES, ORE_VARIANTS, ORE_MATERIALS, oreModelId, oreMaterialOf, oreSignals, offers, freshSave } from '../forge.js';
 
 test('twenty independent GLBs provide five watertight mineral families with three extra variants each', () => {
@@ -15,6 +16,7 @@ test('twenty independent GLBs provide five watertight mineral families with thre
       assert.equal(id, `ore_${family.id}_${variant}`);
       const data = readFileSync(new URL(`../assets/models/${id}.glb`, import.meta.url));
       assert.ok(data.length < 12000, id + ': low-poly payload should remain tiny');
+      assert.deepEqual(data,Buffer.from(buildOreGlb(family.id,variant)),id+': committed model is reproducible from source');
       assert.equal(data.readUInt32LE(0), 0x46546c67, id + ': GLB magic');
       assert.equal(data.readUInt32LE(4), 2, id + ': glTF version');
       assert.equal(data.readUInt32LE(8), data.length, id + ': total GLB length');
