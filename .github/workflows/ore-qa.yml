@@ -12,6 +12,7 @@ on:
       - "test/**"
       - "scripts/qa-ore.mjs"
       - "scripts/qa-ore-catalog.mjs"
+      - "scripts/qa-ore-preview.mjs"
       - "ore-catalog.html"
       - "scripts/ore-geometry.mjs"
       - "assets/models/ore_*.glb"
@@ -48,6 +49,8 @@ jobs:
         run: node scripts/qa-ore.mjs
       - name: Twenty mineral models and twelve material visual review
         run: node scripts/qa-ore-catalog.mjs
+      - name: Verify isolated GitHub Pages V4 on mobile
+        run: node scripts/qa-ore-preview.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
