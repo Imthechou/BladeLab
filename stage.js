@@ -86,13 +86,30 @@ function oreSection(geometry, cut) {
     }
     return half.slice(0, -1);
   };
-  const rim = [...hullHalf(points), ...hullHalf(points.reverse())];
-  const positions = [];
-  for (let i = 1; i < rim.length - 1; i++) {
-    for (const [y, z] of [rim[0], rim[i], rim[i + 1]]) positions.push(cut, y * .987, z * .987);
+  const rim = [...hullHalf(points), ...hullHalf([...points].reverse())];
+  if (rim.length < 3) return new T.BufferGeometry();
+  const center = [
+    rim.reduce((sum, p) => sum + p[0], 0) / rim.length,
+    rim.reduce((sum, p) => sum + p[1], 0) / rim.length,
+  ];
+  // A narrow, rough host-rock annulus encases the mineral deposit. Vertices
+  // belong to the mesh's real intersection, so the cut is not a floating disk.
+  const positions = [], rimWeights = [];
+  const vertex = (point, rimWeight) => {
+    positions.push(cut, point[0], point[1]);
+    rimWeights.push(rimWeight);
+  };
+  for (let i = 0; i < rim.length; i++) {
+    const a = rim[i], b = rim[(i + 1) % rim.length];
+    const innerA = [lerp(center[0], a[0], .82), lerp(center[1], a[1], .82)];
+    const innerB = [lerp(center[0], b[0], .82), lerp(center[1], b[1], .82)];
+    vertex(center, 0); vertex(innerA, 0); vertex(innerB, 0);
+    vertex(innerA, 0); vertex(a, 1); vertex(b, 1);
+    vertex(innerA, 0); vertex(b, 1); vertex(innerB, 0);
   }
   const slice = new T.BufferGeometry();
   slice.setAttribute('position', new T.Float32BufferAttribute(positions, 3));
+  slice.setAttribute('cutRim', new T.Float32BufferAttribute(rimWeights, 1));
   slice.computeVertexNormals();
   return slice;
 }
