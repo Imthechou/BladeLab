@@ -290,7 +290,7 @@ export class ForgeStage {
       const process = isOreModel(id) || id === 'molten';
       const coords = process ? null : coordinates(geometry, id);
       const uniforms = isOreModel(id) ? this.oreUniforms : id === 'molten' ? this.meltUniforms : surfaceUniforms();
-      const material = isOreModel(id) ? makeOreMaterial(source.material, uniforms) :
+      const material = isOreModel(id) ? makeOreMaterial(source.material, uniforms, id.split('_')[1]) :
         id === 'molten' ? makeMeltMaterial(uniforms) : makeBladeMaterial(source.material, uniforms, id === 'blank');
       const mesh = new T.Mesh(geometry, material);
       const asset = { mesh, coords, uniforms };
@@ -453,7 +453,7 @@ export class ForgeStage {
     const section = this.oreCutMaterial ??= makeCutMaterial(this.oreUniforms);
     this.orePieces = [-1, 1].map(direction => {
       const plane = new T.Plane();
-      const material = makeOreMaterial(this.mesh.material, this.oreUniforms);
+      const material = makeOreMaterial(this.mesh.material, this.oreUniforms, this.stoneFamily);
       material.clippingPlanes = [plane];
       const group = new T.Group();
       group.add(new T.Mesh(this.mesh.geometry, material), new T.Mesh(slice, section));
