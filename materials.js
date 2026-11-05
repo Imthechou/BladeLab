@@ -246,8 +246,8 @@ export function makeOreMaterial(original, uniforms) {
   material.customProgramCacheKey = () => 'bladelab-ore-twelve-minerals-4';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = 'varying vec3 vOre; varying vec3 vOreNormal;\\n' +
-      shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\\nvOre = position; vOreNormal = normal;');
+    shader.vertexShader = 'varying vec3 vOre; varying vec3 vOreNormal;\n' +
+      shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvOre = position; vOreNormal = normal;');
     shader.fragmentShader = fragmentHead.slice(fragmentHead.indexOf('float forgeHash')) + `
       uniform float oreSeed, oreReveal, oreGrade, oreHeat, oreFamily, oreMaterial;
       uniform float oreVein, oreFlaw, oreLuster, oreDensity, oreCrust, oreRoughness, oreMetalness;
@@ -376,8 +376,8 @@ export function makeCutMaterial(uniforms) {
     `).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = cutRough;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = cutMetal;')
       .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += oreVeinColor * trace * oreGrade * .035;');
-    shader.vertexShader = 'varying vec3 vSection;\\n' +
-      shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\\nvSection = position;');
+    shader.vertexShader = 'varying vec3 vSection;\n' +
+      shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvSection = position;');
   };
   return material;
 }
