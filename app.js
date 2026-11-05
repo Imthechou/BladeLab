@@ -1,9 +1,9 @@
 import {
-  STORAGE_KEY, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, RARE_ODDS, oreSignals, MODELS, LOOKS, FITS, STAT_NAMES,
+  STORAGE_KEY, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, ORE_VARIANTS, RARE_ODDS, oreSignals, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature,
-} from './forge.js?v=3';
-import { ForgeStage } from './stage.js?v=3';
+} from './forge.js?v=4';
+import { ForgeStage } from './stage.js?v=4';
 import { ForgeSound } from './sound.js?v=2';
 import { createQaSession } from './qa.js?v=2.1';
 
@@ -98,11 +98,15 @@ function render() {
   if (phase === 'ore') {
     const family = familyOf(ore.family);
     const signs = oreSignals(ore);
+    const mineral = oreMaterialOf(ore);
     title('01 / ROUGH STOCK', '看石皮，赌内芯', '观察裂口和矿脉，比较本批三块原石。外观提供线索，但切开前谁都不知道成色。');
     readout.innerHTML = `<div class="info-block ore-inspection">
       <div class="info-line"><small>LOT ${ore.number} · ${ORE_TIERS[ore.tier]}</small><b class="readout-number">${ore.price} CR</b></div>
-      <strong>${family.name} <small>· ${clues[ore.clue]}</small></strong>
-      <div class="ore-signals"><span>${signs.vein}</span><span>${signs.shell}</span><span>${signs.glow}</span></div>
+      <strong>${family.name} <small>· ${mineral.name} / ${ORE_VARIANTS[ore.variant ?? 0]}</small></strong>
+      <div class="ore-signals" aria-label="五项石皮观察线索">
+        <span><em>矿脉</em>${signs.vein}</span><span><em>裂隙</em>${signs.shell}</span><span><em>亮点</em>${signs.glow}</span>
+        <span><em>密实度</em>${signs.density}</span><span><em>石皮</em>${signs.crust}</span>
+      </div>
       <div class="ore-odds"><span>该价位稀质概率</span><b>${RARE_ODDS[ore.tier]}%</b><small>按价位分布 · 非单块保证</small></div>
       <p>${family.hint}</p>
     </div>`;
@@ -122,13 +126,14 @@ function render() {
       actions.innerHTML = button('to-refine', '切面鉴定中…', { off: true });
     } else {
       const signs = oreSignals(ore);
+      const mineral = oreMaterialOf(ore);
       title('01 / CUT OPEN', family.name + ' · ' + GRADES[ore.grade], '翻动切面检查矿芯。矿脉色泽会留在钢坯中，精炼可改善纯度和稳定性。');
       readout.innerHTML = `<div class="info-block ore-report ore-result grade-${ore.grade}">
-        <div class="info-line"><small>LOT ${ore.number} · ${ORE_TIERS[ore.tier]}</small><b class="readout-number">−${ore.price} CR</b></div>
+        <div class="info-line"><small>LOT ${ore.number} · ${mineral.name}</small><b class="readout-number">−${ore.price} CR</b></div>
         <div class="ore-grade"><span class="ore-grade-icon">${['◆','✦','✧'][ore.grade]}</span><div><small>切石结果</small><strong>${GRADES[ore.grade]}矿芯</strong></div><small>已扣费 · 不可退料</small></div>
         <div class="report-row"><span>纯净度</span><b id="ore-purity">${ore.purity}</b><small>${ore.purity >= 73 ? '内芯纯净，易成好钢' : '精炼有提升空间'}</small></div>
         <div class="report-row"><span>稳定性</span><b id="ore-stability">${stabilityOf(ore.stability)}</b><small>决定锻打断裂风险</small></div>
-        <div class="report-vein"><i class="vein-sample" style="--vein:${family.color};--vein-dark:${family.dark}"></i><span><small>矿脉遗传 · ${signs.vein}</small><strong>${LOOKS.pattern[family.pattern]} / ${LOOKS.film[family.film]}</strong></span></div>
+        <div class="report-vein"><i class="vein-sample" style="--vein:${family.color};--vein-dark:${family.dark}"></i><span><small>原矿纹理继承 · ${signs.vein}</small><strong>${LOOKS.pattern[family.pattern]} / ${LOOKS.film[family.film]}</strong></span></div>
       </div>`;
       actions.innerHTML = button('to-refine', '确认矿芯 · 送去精炼');
     }
@@ -177,10 +182,10 @@ function renderTray(run, fit) {
   if (phase === 'ore') {
     tray.innerHTML = `<div class="tray-head"><h2>本批三块原石</h2><small>点选对比 · 价格决定稀质概率</small></div>
       <div class="ore-grid">${offers(run).map((stone, n) => {
-        const rock = familyOf(stone.family), signs = oreSignals(stone);
-        return `<button type="button" class="ore-card ${n === run.selected ? 'is-selected' : ''}" data-action="select-ore" data-id="${n}" aria-pressed="${n === run.selected}" aria-label="第${n + 1}块 ${rock.name} ${stone.price}信用点，${signs.vein}、${signs.shell}">
+        const rock = familyOf(stone.family), signs = oreSignals(stone), mineral = oreMaterialOf(stone);
+        return `<button type="button" class="ore-card ${n === run.selected ? 'is-selected' : ''}" data-action="select-ore" data-id="${n}" aria-pressed="${n === run.selected}" aria-label="第${n + 1}块 ${rock.name}，${mineral.name}，${stone.price}信用点，${signs.vein}、${signs.shell}">
           <span class="ore-card-top"><b>LOT ${stone.number}</b><span>${ORE_TIERS[stone.tier]}</span></span>
-          <span class="ore-card-body"><i class="ore-chip" style="--stone:${rock.color};--stone-dark:${rock.dark};--veins:${stone.vein/100};--cracks:${stone.flaw/100}"></i><span><b>${rock.name}</b><small>${signs.vein} · ${signs.shell}</small></span></span>
+          <span class="ore-card-body"><i class="ore-chip" style="--stone:${mineral.vein};--stone-dark:${mineral.base};--veins:${stone.vein/100};--cracks:${stone.flaw/100}"></i><span><b>${rock.name}</b><small>${mineral.name}</small><small>${signs.vein} · ${signs.shell}</small></span></span>
           <span class="ore-card-footer"><strong>${stone.price} CR</strong><span>稀质 ${RARE_ODDS[stone.tier]}%</span></span>
         </button>`;
       }).join('')}</div>`;
