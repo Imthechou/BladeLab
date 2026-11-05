@@ -359,11 +359,14 @@ export function makeCutMaterial(uniforms) {
       float n = forgeNoise(p*vec2(7.5,10.5)+oreSeed*9.);
       float fine = forgeNoise(p*vec2(31.,37.)-oreSeed*17.);
       float speck = forgeHash(floor(p*99.+oreSeed*12.));
-      float bandX = p.y*17. + sin(p.x*9.+oreSeed*9.)*.9+n*1.6;
-      float layer = max(forgeBand(bandX,.13),forgeBand(bandX*.54+oreSeed*3.,.11)*.60);
-      float shardA = p.x*14. + p.y*10. + oreSeed*4.;
-      float shardB = p.x*12. - p.y*16. + oreSeed*6.;
-      float crystal = max(forgeBand(shardA,.12),forgeBand(shardB,.12));
+      // No crossed periodic bands: a crisscross pattern reads as a digital grid.
+      // Geological seams are sparse, warped and break into irregular pockets.
+      float warp = forgeNoise(p*vec2(4.0,5.3)+oreSeed*4.8);
+      float bandX = p.y*10.4 + p.x*2.1 + sin(p.x*5.3+oreSeed*7.)*.85 + warp*2.6;
+      float layer = (1.-smoothstep(.18,.50,abs(sin(bandX*.53)))) *
+        smoothstep(.33,.76,n);
+      float crystal = smoothstep(.55,.82,forgeNoise(p*vec2(7.3,9.4) +
+        vec2(warp*.72+oreSeed*4.,warp*1.06+oreSeed*7.)));
       float fleck = smoothstep(.968,.996,speck);
       float band = oreFamily < .5 ? layer :
         oreFamily < 1.5 ? max(crystal,layer*.24) :
