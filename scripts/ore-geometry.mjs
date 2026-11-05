@@ -41,7 +41,7 @@ export function buildOreGlb(family, variant=0) {
     }else if(fi===2){ // coal: broad broken ledges and pressure-squeezed silhouette
       radius+=.072*Math.sin(u*5.5+w*3.8+phase)*Math.sin(v*3.4+phase);
     }else if(fi===3){ // meteorite: shallow fusion-crust dimples, not a noise ball
-      const dent=([.68,.28,.55],[-.22,.81,-.48],[-.77,-.39,.48])
+      const dent=[[.68,.28,.55],[-.22,.81,-.48],[-.77,-.39,.48]]
         .reduce((sum,c)=>{const d=dot(p,normalize(c)); return sum+Math.exp(-(1-d)*48);},0);
       radius-=.11*dent;
     }else{ // ochre: compressed sedimentary nodule with long strata
