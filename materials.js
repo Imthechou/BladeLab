@@ -239,9 +239,10 @@ export function makeBladeMaterial(original, uniforms, raw) {
   return material;
 }
 
-export function makeOreMaterial(original, uniforms) {
+export function makeOreMaterial(original, uniforms, family = 'river') {
   const material = new T.MeshStandardMaterial({
-    color: 0xffffff, roughness: .9, metalness: .1, envMapIntensity: .64,
+    color: 0xffffff, roughness: .9, metalness: .1, envMapIntensity: .57,
+    flatShading: family === 'coal' || family === 'frost' || family === 'ochre',
   });
   material.customProgramCacheKey = () => 'bladelab-ore-twelve-minerals-4';
   material.onBeforeCompile = shader => {
@@ -255,10 +256,10 @@ export function makeOreMaterial(original, uniforms) {
       varying vec3 vOre, vOreNormal;
     ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       vec3 p = vOre;
-      float n = forgeNoise(p.xy*vec2(8.,12.) + p.z*5. + oreSeed*18.);
-      float fine = forgeNoise(p.xy*vec2(38.,47.)+p.z*13. + oreSeed*22.);
+      float n = forgeNoise(p.xy*vec2(5.5,8.5) + p.z*4. + oreSeed*18.);
+      float fine = forgeNoise(p.xy*vec2(19.,27.)+p.z*9. + oreSeed*22.);
       float dust = forgeHash(floor(p.xy*vec2(94.,117.) + p.z*45. + oreSeed*67.));
-      float ripple = p.y*39. + sin(p.x*11. + oreSeed*6.)*1.7 + n*2.3;
+      float ripple = p.y*25. + sin(p.x*8. + oreSeed*6.)*1.4 + n*1.8;
       float layer = forgeBand(ripple,.12);
       float shard = max(forgeBand(p.y*35.+p.x*36.+oreSeed*9.,.055),
                         forgeBand(p.y*43.-p.x*27.+oreSeed*8.,.06));
@@ -295,7 +296,7 @@ export function makeOreMaterial(original, uniforms) {
       }
       float coat = .36 + oreCrust*.34;
       float oreExpose = clamp((veinLine*.77 + shiny*.28)*oreVein*(1.-coat*.57),0.,.77);
-      vec3 stone = oreBaseColor * (.72 + n*.42 + fine*.15 - pore*.11);
+      vec3 stone = oreBaseColor * (.78 + n*.30 + fine*.10 - pore*.10);
       stone = mix(stone,stone*vec3(1.10,.77,.55),rust);
       stone *= 1.-grainExtra*.35;
       stone = mix(stone, oreVeinColor*(.64+.28*fine),oreExpose);
@@ -352,19 +353,21 @@ export function makeCutMaterial(uniforms) {
       float n = forgeNoise(p*vec2(8.,11.)+oreSeed*9.);
       float fine = forgeNoise(p*vec2(33.,47.)-oreSeed*17.);
       float speck = forgeHash(floor(p*136.+oreSeed*12.));
-      float bands = p.y*49. + sin(p.x*16.+oreSeed*9.)*1.65 + n*3.1;
+      float bands = p.y*25. + sin(p.x*9.+oreSeed*9.)*1.05 + n*2.0;
       float layer = max(forgeBand(bands,.11),forgeBand(bands*.52+oreSeed*3.,.06)*.63);
-      float crystal = max(forgeBand(p.x*36.+p.y*22.+oreSeed*4.,.08),
-                          forgeBand(p.x*31.-p.y*37.+oreSeed*6.,.075));
+      float crystal = max(forgeBand(p.x*19.+p.y*13.+oreSeed*4.,.12),
+                          forgeBand(p.x*16.-p.y*21.+oreSeed*6.,.11));
       float fleck = smoothstep(.978,.999,speck);
       float band = oreFamily < .5 ? layer :
         oreFamily < 1.5 ? crystal :
         oreFamily < 2.5 ? max(layer*.46,fleck*.58) :
         oreFamily < 3.5 ? max(layer*.53,crystal*.29) :
         max(layer*.78,crystal*.14);
-      float mineral = clamp(band * (.18 + oreVein*.53 + oreGrade*.15),0.,.96);
+      float center = 1.-smoothstep(.14,.48,length(p*vec2(1.13,1.35)));
+      float deposit = center * (oreGrade*.13 + orePurity*.13);
+      float mineral = clamp(band * (.18 + oreVein*.53 + oreGrade*.15) + deposit,0.,.96);
       float cavity = smoothstep(.71,.92,n) * (1.-orePurity)*(.14+.22*oreFlaw);
-      vec3 stone = oreBaseColor*(.79+.26*n+.10*fine);
+      vec3 stone = oreBaseColor*(.95+.23*n+.09*fine);
       stone *= 1.-cavity*.85;
       float rich = clamp(.20+.19*oreGrade+.25*orePurity,.15,.83);
       vec3 core = mix(stone,oreVeinColor*(.70+.33*fine)+vec3(.024),mineral*rich);
