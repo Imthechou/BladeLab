@@ -42,7 +42,8 @@ try{
    await page.screenshot({path:shot,animations:'disabled'});
    for(let variant=0;variant<4;variant++){
      await page.locator(`button[data-action="variant"][data-id="${variant}"]`).click();
-     await page.waitForTimeout(160);
+     await page.waitForTimeout(180);
+     await page.locator('.scene').screenshot({path:`${out}/shape-${family}-v${variant}.png`,animations:'disabled'});
    }
  }
  const materialIds=await page.locator('button[data-action="material"]').evaluateAll(
