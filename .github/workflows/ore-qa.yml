@@ -11,6 +11,10 @@ on:
       - "styles.css"
       - "test/**"
       - "scripts/qa-ore.mjs"
+      - "scripts/qa-ore-catalog.mjs"
+      - "ore-catalog.html"
+      - "scripts/ore-geometry.mjs"
+      - "assets/models/ore_*.glb"
       - ".github/workflows/ore-qa.yml"
   workflow_dispatch:
 permissions:
@@ -42,6 +46,8 @@ jobs:
           exit 1
       - name: Mobile journey and WebGL smoke
         run: node scripts/qa-ore.mjs
+      - name: Twenty mineral models and twelve material visual review
+        run: node scripts/qa-ore-catalog.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
