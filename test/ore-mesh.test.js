@@ -5,6 +5,56 @@ import { createHash } from 'node:crypto';
 import { buildOreGlb } from '../scripts/ore-geometry.mjs';
 import { FAMILIES, ORE_VARIANTS, ORE_MATERIALS, oreModelId, oreMaterialOf, oreSignals, offers, freshSave } from '../forge.js';
 
+// GLB JSON bounds may be serialized with slightly different last digits across
+// Node/V8 environments. Compare actual geometry and topology instead of bytes.
+function parseGlb(buffer) {
+  const jsonLength = buffer.readUInt32LE(12);
+  const json = JSON.parse(buffer.subarray(20, 20 + jsonLength).toString());
+  const base = 20 + jsonLength + 8;
+  const access = index => {
+    const accessor = json.accessors[index];
+    const view = json.bufferViews[accessor.bufferView];
+    const offset = base + (view.byteOffset || 0) + (accessor.byteOffset || 0);
+    const components = accessor.type === 'VEC3' ? 3 : 1;
+    const values = [];
+    for (let k = 0; k < accessor.count * components; k++) {
+      values.push(accessor.componentType === 5126
+        ? buffer.readFloatLE(offset + 4 * k)
+        : buffer.readUInt16LE(offset + 2 * k));
+    }
+    return values;
+  };
+  const primitive = json.meshes[0].primitives[0];
+  return {
+    vertices: access(primitive.attributes.POSITION),
+    normals: access(primitive.attributes.NORMAL),
+    indices: access(primitive.indices),
+  };
+}
+function validateGeneratedGeometry(committed, generated, name) {
+  const a = parseGlb(committed), b = parseGlb(generated);
+  assert.deepEqual(a.indices, b.indices, name + ': triangle topology changed');
+  for (const key of ['vertices', 'normals']) {
+    assert.equal(a[key].length, b[key].length, name + ': ' + key + ' count');
+    for (let i = 0; i < a[key].length; i++) {
+      assert.ok(Number.isFinite(a[key][i]), name + ': nonfinite ' + key + '[' + i + ']');
+      assert.ok(Math.abs(a[key][i] - b[key][i]) < 0.00001,
+        name + ': unexpected coordinate drift ' + key + '[' + i + ']');
+    }
+  }
+  const edges = new Map();
+  for (let i = 0; i < a.indices.length; i += 3) {
+    const face = a.indices.slice(i, i + 3);
+    assert.equal(new Set(face).size, 3, name + ': degenerate index triangle');
+    for (const [u, v] of [[face[0],face[1]], [face[1],face[2]], [face[2],face[0]]]) {
+      const edge = Math.min(u,v) + ':' + Math.max(u,v);
+      edges.set(edge, (edges.get(edge) || 0) + 1);
+    }
+  }
+  assert.ok([...edges.values()].every(n => n === 2),
+    name + ': mesh must have closed manifold edges for the section cutter');
+}
+
 test('twenty independent GLBs provide five watertight mineral families with three extra variants each', () => {
   assert.equal(FAMILIES.length, 5);
   assert.equal(ORE_VARIANTS.length, 4);
@@ -16,7 +66,7 @@ test('twenty independent GLBs provide five watertight mineral families with thre
       assert.equal(id, `ore_${family.id}_${variant}`);
       const data = readFileSync(new URL(`../assets/models/${id}.glb`, import.meta.url));
       assert.ok(data.length < 12000, id + ': low-poly payload should remain tiny');
-      assert.deepEqual(data,Buffer.from(buildOreGlb(family.id,variant)),id+': committed model is reproducible from source');
+      validateGeneratedGeometry(data, Buffer.from(buildOreGlb(family.id, variant)), id);
       assert.equal(data.readUInt32LE(0), 0x46546c67, id + ': GLB magic');
       assert.equal(data.readUInt32LE(4), 2, id + ': glTF version');
       assert.equal(data.readUInt32LE(8), data.length, id + ': total GLB length');
