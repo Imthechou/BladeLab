@@ -262,26 +262,27 @@ export function makeOreMaterial(original, uniforms, family = 'river') {
       float n = forgeNoise(p.xy*vec2(5.5,8.5) + p.z*4. + oreSeed*18.);
       float fine = forgeNoise(p.xy*vec2(19.,27.)+p.z*9. + oreSeed*22.);
       float dust = forgeHash(floor(p.xy*vec2(94.,117.) + p.z*45. + oreSeed*67.));
-      float ripple = p.y*25. + sin(p.x*8. + oreSeed*6.)*1.4 + n*1.8;
-      float layer = forgeBand(ripple,.12);
-      float shard = max(forgeBand(p.y*35.+p.x*36.+oreSeed*9.,.055),
-                        forgeBand(p.y*43.-p.x*27.+oreSeed*8.,.06));
-      float crack = forgeBand(p.y*18. + p.x*7. + sin(p.z*22. + oreSeed*5.)*1.7,.037);
+      // A few broad deposits, not evenly repeated contour lines across the whole shell.
+      float ripple = p.y*12. + p.x*3.2 + sin(p.z*5.+oreSeed*6.)*.8 + n*2.1;
+      float layer = (1.-smoothstep(.17,.40,abs(sin(ripple*.57))))*smoothstep(.38,.73,n);
+      float shard = smoothstep(.62,.84,forgeNoise(p.yz*vec2(8.,12.) + p.x*4. + oreSeed*5.));
+      shard *= .58 + .42*smoothstep(.35,.8,fine);
+      float crack = 1.-smoothstep(.045,.115,abs(sin(p.y*9. + p.x*3. + sin(p.z*7. + oreSeed*5.)*1.3)));
       crack *= (oreFlaw*.83) * smoothstep(.28,.69,n);
       float pore = smoothstep(.68,.9,fine) * (1.-oreDensity*.78);
       float fleck = smoothstep(.985,.999,dust)*oreLuster;
-      float veinLine = layer*.48;
+      float veinLine = max(layer*.28, smoothstep(.70,.86,n)*.30);
       float rust = 0.;
       float grainExtra = 0.;
       float shiny = 0.;
       if (oreMaterial < 1.5) {
-        veinLine = max(layer*.6, fine*.16);
+        veinLine = max(layer*.38, smoothstep(.76,.92,n)*.22);
         shiny = oreMaterial > .5 ? fleck*.62 : fleck*.18;
       } else if (oreMaterial < 2.5) {
-        veinLine = layer*.96;
+        veinLine = max(layer*.62, shard*.18);
         grainExtra = .13 * abs(sin(ripple*1.4));
       } else if (oreMaterial < 4.5) {
-        veinLine = shard * (oreMaterial < 3.5 ? .9 : .55);
+        veinLine = shard * (oreMaterial < 3.5 ? .65 : .47);
         shiny = fleck * (oreMaterial > 3.5 ? .85 : .42);
         grainExtra = .08 * forgeHash(floor(p.xy*17. + oreSeed*4.));
       } else if (oreMaterial < 6.5) {
@@ -293,7 +294,7 @@ export function makeOreMaterial(original, uniforms, family = 'river') {
         shiny = fleck*(oreMaterial>7.5 ? 1.0 : .3);
         pore *= .75;
       } else {
-        veinLine = layer * (oreMaterial>10.5 ? .80 : .43);
+        veinLine = layer * (oreMaterial>10.5 ? .50 : .33);
         rust = smoothstep(.38,.77,n) * (oreMaterial>9.5 ? .18 : .08);
         grainExtra = (1.-fine)*.14;
       }
@@ -353,28 +354,31 @@ export function makeCutMaterial(uniforms) {
       varying vec3 vSection;
     ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       vec2 p = vSection.yz;
-      float n = forgeNoise(p*vec2(8.,11.)+oreSeed*9.);
-      float fine = forgeNoise(p*vec2(33.,47.)-oreSeed*17.);
-      float speck = forgeHash(floor(p*136.+oreSeed*12.));
-      float bands = p.y*25. + sin(p.x*9.+oreSeed*9.)*1.05 + n*2.0;
-      float layer = max(forgeBand(bands,.11),forgeBand(bands*.52+oreSeed*3.,.06)*.63);
-      float crystal = max(forgeBand(p.x*19.+p.y*13.+oreSeed*4.,.12),
-                          forgeBand(p.x*16.-p.y*21.+oreSeed*6.,.11));
-      float fleck = smoothstep(.978,.999,speck);
+      // Mottled genuine-looking mineral deposits, with sparse wavy veins.
+      // Avoid two crossed regular grids: they look like a printed tile on the cut.
+      float n = forgeNoise(p*vec2(5.5,7.1)+oreSeed*9.);
+      float fine = forgeNoise(p*vec2(17.,21.)-oreSeed*17.);
+      float fleck = smoothstep(.87,.96,fine);
+      float warp = forgeNoise(p*vec2(4.,5.)+oreSeed*4.5);
+      float bands = p.y*11. + p.x*2.4 + sin(p.x*6.+oreSeed*8.)*.8 + warp*2.2;
+      float layer = (1.-smoothstep(.20,.52,abs(sin(bands*.51))))*smoothstep(.35,.72,n);
+      float crystal = smoothstep(.58,.82,forgeNoise(p*vec2(8.4,9.7)+vec2(oreSeed*4.,oreSeed*7.)));
       float band = oreFamily < .5 ? layer :
         oreFamily < 1.5 ? crystal :
         oreFamily < 2.5 ? max(layer*.46,fleck*.58) :
         oreFamily < 3.5 ? max(layer*.53,crystal*.29) :
         max(layer*.78,crystal*.14);
-      float center = 1.-smoothstep(.14,.48,length(p*vec2(1.13,1.35)));
-      float deposit = center * (oreGrade*.13 + orePurity*.13);
-      float mineral = clamp(band * (.18 + oreVein*.53 + oreGrade*.15) + deposit,0.,.96);
+      float center = 1.-smoothstep(.17,.49,length(p*vec2(1.09,1.23)));
+      float deposit = center * (oreGrade*.20 + orePurity*.12) * smoothstep(.28,.66,n);
+      float mineral = clamp(band * (.14 + oreVein*.43 + oreGrade*.19) + deposit,0.,.90);
       float cavity = smoothstep(.71,.92,n) * (1.-orePurity)*(.14+.22*oreFlaw);
       vec3 stone = oreBaseColor*(.95+.23*n+.09*fine);
       stone *= 1.-cavity*.85;
-      float rich = clamp(.20+.19*oreGrade+.25*orePurity,.15,.83);
-      vec3 core = mix(stone,oreVeinColor*(.70+.33*fine)+vec3(.024),mineral*rich);
-      float trace = fleck * band * (oreGrade*.22+.10) * oreLuster;
+      float rich = clamp(.12+.25*oreGrade+.20*orePurity,.15,.88);
+      vec3 core = mix(stone,oreVeinColor*(.69+.35*fine)+vec3(.025),mineral*rich);
+      float rockyRind = smoothstep(.38,.57,length(p*vec2(1.05,1.23)));
+      core = mix(core,stone*.72,rockyRind*.51);
+      float trace = fleck * band * (oreGrade*.23+.07) * oreLuster;
       core += oreVeinColor * trace*.19;
       diffuseColor.rgb = core;
       float cutMetal = clamp(.14+mineral*rich*.58+trace*.13,.12,.74);
