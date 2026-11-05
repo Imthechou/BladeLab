@@ -33,18 +33,18 @@ export const RARE_ODDS = [5, 12, 22];
 // Independent low-poly shapes: one base plus three subtle, authored silhouette variants.
 export const ORE_VARIANTS = ['原型', '横卧', '棱脊', '偏心'];
 export const ORE_MATERIALS = Object.freeze([
-  { id: 'river_gray', family: 'river', name: '河磨灰岩', base: '#656e71', vein: '#8e9eab', style: 0, roughness: .90, metalness: .12 },
-  { id: 'river_silver', family: 'river', name: '银砂铁石', base: '#50585b', vein: '#aab2ae', style: 1, roughness: .82, metalness: .27 },
-  { id: 'river_banded', family: 'river', name: '青灰层铁', base: '#515a5e', vein: '#8e9da1', style: 2, roughness: .88, metalness: .14 },
-  { id: 'frost_quartz', family: 'frost', name: '霜白石英', base: '#798589', vein: '#a4c5c2', style: 3, roughness: .73, metalness: .10 },
-  { id: 'frost_mica', family: 'frost', name: '青蓝云母', base: '#515e63', vein: '#a5bdba', style: 4, roughness: .79, metalness: .25 },
-  { id: 'coal_slag', family: 'coal', name: '黑熔渣', base: '#39393a', vein: '#846257', style: 5, roughness: .96, metalness: .14 },
-  { id: 'coal_oxide', family: 'coal', name: '赤锈铁皮', base: '#5c4941', vein: '#b0805c', style: 6, roughness: .94, metalness: .12 },
-  { id: 'meteor_fusion', family: 'meteor', name: '暗陨熔壳', base: '#3e4149', vein: '#80818c', style: 7, roughness: .86, metalness: .29 },
-  { id: 'meteor_nickel', family: 'meteor', name: '镍铁陨壳', base: '#53535a', vein: '#a2a1ad', style: 8, roughness: .78, metalness: .37 },
-  { id: 'ochre_limonite', family: 'ochre', name: '黄褐褐铁', base: '#80634b', vein: '#b69a79', style: 9, roughness: .97, metalness: .08 },
-  { id: 'ochre_red', family: 'ochre', name: '赤铁结核', base: '#70534b', vein: '#b18a70', style: 10, roughness: .92, metalness: .16 },
-  { id: 'ochre_layer', family: 'ochre', name: '砂岩铁层', base: '#777064', vein: '#ab9d84', style: 11, roughness: .95, metalness: .08 },
+  { id: 'river_gray', family: 'river', name: '河磨灰岩', base: '#5f6769', vein: '#91999c', style: 0, roughness: .90, metalness: .12 },
+  { id: 'river_silver', family: 'river', name: '银砂铁石', base: '#596164', vein: '#9ca7ab', style: 1, roughness: .82, metalness: .27 },
+  { id: 'river_banded', family: 'river', name: '青灰层铁', base: '#536065', vein: '#879399', style: 2, roughness: .88, metalness: .14 },
+  { id: 'frost_quartz', family: 'frost', name: '霜白石英', base: '#737f83', vein: '#a2b7b6', style: 3, roughness: .73, metalness: .10 },
+  { id: 'frost_mica', family: 'frost', name: '青蓝云母', base: '#56676a', vein: '#9daead', style: 4, roughness: .79, metalness: .25 },
+  { id: 'coal_slag', family: 'coal', name: '黑熔渣', base: '#37393a', vein: '#736259', style: 5, roughness: .96, metalness: .14 },
+  { id: 'coal_oxide', family: 'coal', name: '赤锈铁皮', base: '#50443e', vein: '#907560', style: 6, roughness: .94, metalness: .12 },
+  { id: 'meteor_fusion', family: 'meteor', name: '暗陨熔壳', base: '#40454d', vein: '#899198', style: 7, roughness: .86, metalness: .29 },
+  { id: 'meteor_nickel', family: 'meteor', name: '镍铁陨壳', base: '#545b61', vein: '#9da8a8', style: 8, roughness: .78, metalness: .37 },
+  { id: 'ochre_limonite', family: 'ochre', name: '黄褐褐铁', base: '#73685a', vein: '#a89984', style: 9, roughness: .97, metalness: .08 },
+  { id: 'ochre_red', family: 'ochre', name: '赤铁结核', base: '#68564d', vein: '#a08a72', style: 10, roughness: .92, metalness: .16 },
+  { id: 'ochre_layer', family: 'ochre', name: '砂岩铁层', base: '#726d64', vein: '#aca294', style: 11, roughness: .95, metalness: .08 },
 ]);
 export const oreMaterialOf = ore => ORE_MATERIALS.find(item => item.id === ore?.material) ||
   ORE_MATERIALS.find(item => item.family === ore?.family) || ORE_MATERIALS[0];
