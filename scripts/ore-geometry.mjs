@@ -27,39 +27,50 @@ export function buildOreGlb(family, variant=0) {
       next.push([a,ab,ca],[b,bc,ab],[c,ca,bc],[ab,bc,ca]);}
     faces=next;
   }
-  const dims=[[.70,.53,.58],[.58,.70,.57],[.70,.53,.62],[.63,.60,.60],[.72,.44,.64]][fi];
+  // Silhouettes first: river-worn oval, cleaved quartz, iron-slag block,
+  // compact pitted meteorite and stratified ferric nodule.
+  const dims=[[.75,.46,.55],[.60,.62,.55],[.76,.48,.59],[.66,.54,.59],[.78,.42,.61]][fi];
+  const squareness=[.91,.74,.65,.82,.64][fi];
+  const signedPow=(v,e)=>Math.sign(v)*Math.pow(Math.abs(v),e);
+  const capNormals=[[[.87,.20,.41],.83],[[-.58,.66,.29],.87],[[.13,-.92,.23],.81],[[-.72,-.27,-.48],.86]];
   const phase=fi*1.63+variant*.59;
   points=points.map(p=>{
     const [u,v,w]=p;
     const broad=Math.sin(u*4.5+v*2.2+phase)*Math.cos(w*3.8-v*.8-phase);
     const shoulder=Math.sin(v*5.1-w*2.2+phase*1.4)*Math.cos(u*3.6+phase);
-    let radius=1+.045*broad+.033*shoulder;
+    let radius=1+.025*broad+.018*shoulder;
     if(fi===0){ // river: rounded water-worn ellipsoid and subtle shallow plane
-      radius+=.018*Math.sin(u*7.2+phase)*Math.cos(v*3.4);
+      radius+=.012*Math.sin(u*4.2+phase)*Math.cos(v*2.4);
     }else if(fi===1){ // frost: broad prism shoulders with no exaggerated spikes
-      radius+=.067*Math.cos(Math.atan2(w,u)*5+phase)*(.35+.65*Math.abs(v));
+      radius+=.039*Math.cos(Math.atan2(w,u)*5+phase)*(.35+.65*Math.abs(v));
     }else if(fi===2){ // coal: broad broken ledges and pressure-squeezed silhouette
-      radius+=.072*Math.sin(u*5.5+w*3.8+phase)*Math.sin(v*3.4+phase);
+      radius+=.044*Math.sin(u*3.5+w*2.8+phase)*Math.sin(v*2.4+phase);
     }else if(fi===3){ // meteorite: shallow fusion-crust dimples, not a noise ball
       const dent=[[.68,.28,.55],[-.22,.81,-.48],[-.77,-.39,.48]]
         .reduce((sum,c)=>{const d=dot(p,normalize(c)); return sum+Math.exp(-(1-d)*48);},0);
-      radius-=.11*dent;
+      radius-=.055*dent;
     }else{ // ochre: compressed sedimentary nodule with long strata
-      radius+=.055*Math.sin(v*6.5+phase)*Math.cos(u*2.8+w*2.7);
+      radius+=.03*Math.sin(v*4.5+phase)*Math.cos(u*2.8+w*2.7);
     }
     if(variant===1)radius+=.027*Math.sin(u*7+phase); // low, broader stone
     if(variant===2)radius+=.031*Math.cos(w*5+v*3+phase); // long ridge
     if(variant===3)radius+=.028*Math.sin(u*4-w*6+phase); // slightly off-center
+    // A few believable clipped faces replace high-frequency random displacement.
+    for(const [normal,limit] of capNormals){
+      const direction=dot(p,normalize(normal));
+      if(direction > .54)radius=Math.min(radius,(limit+(fi===0?.04:0))/direction);
+    }
     const flat=variant===1?.92:variant===2?1.07:1;
     const wide=variant===1?1.06:variant===2?.98:1;
-    let x=u*dims[0]*radius*wide;
-    let y=v*dims[1]*radius*flat;
-    let z=w*dims[2]*radius;
-    if(fi===0)y-=Math.max(0,-v-.5)*.065; // settle naturally on one face
-    if(fi===1){x+=Math.max(0,v)*.07;z+=u*.04;}
-    if(fi===2){y+=u*.047;z*=.95;}
-    if(fi===3)y+=u*.035;
-    if(fi===4){y+=u*.035;z*=1+.035*Math.sin(v*5+phase);}
+    let x=signedPow(u,squareness)*dims[0]*radius*wide;
+    let y=signedPow(v,squareness+.05)*dims[1]*radius*flat;
+    let z=signedPow(w,squareness+.04)*dims[2]*radius;
+    if(fi!==3 && y < -dims[1]*.74)y=-dims[1]*.74+(y+dims[1]*.74)*.42;
+    if(fi===0)y-=Math.max(0,-v-.5)*.025; // worn flat underside
+    if(fi===1){x+=Math.max(0,v)*.095;z+=u*.034;}
+    if(fi===2){y+=u*.05;z*=.96;}
+    if(fi===3)y+=u*.025;
+    if(fi===4){y+=u*.048;z*=1+.025*Math.sin(v*4+phase);}
     if(variant===3){x+=y*.13;z+=u*.035;}
     return [x,y,z];
   });
