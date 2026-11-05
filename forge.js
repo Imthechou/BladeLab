@@ -11,7 +11,8 @@ export const FAMILIES = [
   { id: 'river', name: '河床叠钢', short: '层钢', color: '#8ea8b6', dark: '#334f62', metal: 'silver', pattern: 'damascus', film: 'oxide', hint: '石皮下露出平行的细脉，适合打出层叠纹路。' },
   { id: 'frost', name: '霜晶矿', short: '晶矿', color: '#89cbc7', dark: '#345d5d', metal: 'pearl', pattern: 'crystal', film: 'rainbow', hint: '斜光下有细碎反光，内里可能有清晰的晶区。' },
   { id: 'coal', name: '熔渣铁', short: '暗钢', color: '#e0956a', dark: '#69433a', metal: 'obsidian', pattern: 'ember', film: 'oxide', hint: '断口露出暖色矿脉，可能保留少量熔纹。' },
-  { id: 'meteor', name: '陨星黑矿', short: '陨铁', color: '#aaa1e6', dark: '#413862', metal: 'gunmetal', pattern: 'nebula', film: 'doppler', hint: '石皮发黑，边缘泛出冷光，里面的颜色仍未知。' },
+  { id: 'meteor', name: '陨星黑矿', short: '陨铁', color: '#aaa1e6', dark: '#413862', metal: 'gunmetal', pattern: 'nebula', film: 'doppler', hint: '带浅熔蚀坑的深色熔壳，细看可能见到金属碎屑。' },
+  { id: 'ochre', name: '赭铁层矿', short: '赭铁', color: '#b58a69', dark: '#684735', metal: 'silver', pattern: 'damascus', film: 'gold', hint: '黄褐石皮呈层状剥落，铁质结核常藏在厚皮之内。' },
 ];
 
 export const LOOKS = {
@@ -28,11 +29,40 @@ export const MODELS = {
 export const GRADES = ['普通', '良质', '稀质'];
 export const ORE_TIERS = ['工坊料', '精选料', '珍藏料'];
 export const RARE_ODDS = [5, 12, 22];
-export const oreSignals = ore => ({
-  vein: (ore.vein ?? Math.round((ore.purity ?? 62) * .8)) >= 72 ? '矿脉浓密' : (ore.vein ?? Math.round((ore.purity ?? 62) * .8)) >= 48 ? '矿脉可辨' : '矿脉稀疏',
-  shell: (ore.flaw ?? Math.round(90 - (ore.stability ?? 60))) >= 55 ? '暗裂偏多' : (ore.flaw ?? Math.round(90 - (ore.stability ?? 60))) >= 35 ? '石皮有裂' : '石皮完整',
-  glow: (ore.luster ?? 45) >= 69 ? '断口明亮' : (ore.luster ?? 45) >= 43 ? '断口微光' : '断口暗哑',
-});
+
+// Independent low-poly shapes: one base plus three subtle, authored silhouette variants.
+export const ORE_VARIANTS = ['原型', '横卧', '棱脊', '偏心'];
+export const ORE_MATERIALS = Object.freeze([
+  { id: 'river_gray', family: 'river', name: '河磨灰岩', base: '#656e71', vein: '#8e9eab', style: 0, roughness: .90, metalness: .12 },
+  { id: 'river_silver', family: 'river', name: '银砂铁石', base: '#50585b', vein: '#aab2ae', style: 1, roughness: .82, metalness: .27 },
+  { id: 'river_banded', family: 'river', name: '青灰层铁', base: '#515a5e', vein: '#8e9da1', style: 2, roughness: .88, metalness: .14 },
+  { id: 'frost_quartz', family: 'frost', name: '霜白石英', base: '#798589', vein: '#a4c5c2', style: 3, roughness: .73, metalness: .10 },
+  { id: 'frost_mica', family: 'frost', name: '青蓝云母', base: '#515e63', vein: '#a5bdba', style: 4, roughness: .79, metalness: .25 },
+  { id: 'coal_slag', family: 'coal', name: '黑熔渣', base: '#39393a', vein: '#846257', style: 5, roughness: .96, metalness: .14 },
+  { id: 'coal_oxide', family: 'coal', name: '赤锈铁皮', base: '#5c4941', vein: '#b0805c', style: 6, roughness: .94, metalness: .12 },
+  { id: 'meteor_fusion', family: 'meteor', name: '暗陨熔壳', base: '#3e4149', vein: '#80818c', style: 7, roughness: .86, metalness: .29 },
+  { id: 'meteor_nickel', family: 'meteor', name: '镍铁陨壳', base: '#53535a', vein: '#a2a1ad', style: 8, roughness: .78, metalness: .37 },
+  { id: 'ochre_limonite', family: 'ochre', name: '黄褐褐铁', base: '#80634b', vein: '#b69a79', style: 9, roughness: .97, metalness: .08 },
+  { id: 'ochre_red', family: 'ochre', name: '赤铁结核', base: '#70534b', vein: '#b18a70', style: 10, roughness: .92, metalness: .16 },
+  { id: 'ochre_layer', family: 'ochre', name: '砂岩铁层', base: '#777064', vein: '#ab9d84', style: 11, roughness: .95, metalness: .08 },
+]);
+export const oreMaterialOf = ore => ORE_MATERIALS.find(item => item.id === ore?.material) ||
+  ORE_MATERIALS.find(item => item.family === ore?.family) || ORE_MATERIALS[0];
+export const oreModelId = ore => `ore_${FAMILIES.some(f => f.id === ore?.family) ? ore.family : 'river'}_${Math.max(0, Math.min(3, Math.floor(ore?.variant || 0)))}`;
+export const oreSignals = ore => {
+  const vein = ore?.vein ?? Math.round((ore?.purity ?? 62) * .8);
+  const flaw = ore?.flaw ?? Math.round(90 - (ore?.stability ?? 60));
+  const luster = ore?.luster ?? 45;
+  const density = ore?.density ?? Math.round(ore?.stability ?? 60);
+  const crust = ore?.crust ?? 50;
+  return {
+    vein: vein >= 72 ? '矿脉清晰' : vein >= 48 ? '矿脉可辨' : '矿脉隐约',
+    shell: flaw >= 55 ? '裂隙较多' : flaw >= 35 ? '可见细裂' : '裂隙较少',
+    glow: luster >= 69 ? '亮点明显' : luster >= 43 ? '局部微光' : '表面暗哑',
+    density: density >= 73 ? '颗粒密实' : density >= 49 ? '密实中等' : '质地疏松',
+    crust: crust >= 70 ? '石皮厚重' : crust >= 42 ? '石皮适中' : '石皮较薄',
+  };
+};
 export const STAT_NAMES = ['强度', '韧性', '锋利', '工艺', '设计', '灵性'];
 export const FITS = [
   { id: 'walnut', role: '沉稳', name: '赤木束柄', parts: '胡桃木 · 铜色端箍', color: '#673424', accent: '#bc8555', grip: 1, delta: [0, 5, 0, 3, 2, 0] },
@@ -46,7 +76,7 @@ export const FITS = [
 const anchors = [[6, 0], [10, .006], [14, .017], [18, .034], [22, .068], [25, .128], [27, .231], [30, .5], [35, .66], [40, .8], [45, .9]];
 const priceBands = [[14, 18, .67, .95], [22, 28, .50, .88], [32, 40, .38, .78]];
 const purityBands = [[42, 64], [58, 78], [72, 88]];
-const centers = { river: 68, frost: 58, coal: 62, meteor: 49 };
+const centers = { river: 68, frost: 58, coal: 62, meteor: 49, ochre: 65 };
 const standardModels = ['straight', 'survival', 'bayonet'];
 const strangeModels = Object.keys(MODELS).filter(id => id !== 'blank' && !standardModels.includes(id));
 export const HEAT = Object.freeze({ initial: 35, melt: 65, lower: 65, upper: 78, danger: 86, preheat: 3.5, window: 7.5, good: 3, minimum: .8, burn: 1.2, cast: 1 });
@@ -137,7 +167,13 @@ export function offers(run) {
     const flaw = clamp(Math.round(77 - stability * .66 + (roll() - .5) * 37), 5, 92);
     const luster = clamp(Math.round(purity * .63 + grade * 8 + (roll() - .5) * 44), 8, 98);
     const clue = vein >= 72 ? 2 : vein >= 48 ? 1 : 0;
-    return { id, family: family.id, price, grade, clue, figure, purity, stability, tier, vein, flaw, luster, number: String(id + 1).padStart(2, '0') };
+    const density = clamp(Math.round(stability * .77 + (roll() - .5) * 40 + 13), 8, 98);
+    const crust = clamp(Math.round(69 - purity * .33 + (roll() - .5) * 48 + 12), 7, 96);
+    const choices = ORE_MATERIALS.filter(material => material.family === family.id);
+    const material = choices[Math.floor(roll() * choices.length)].id;
+    const variant = Math.floor(roll() * ORE_VARIANTS.length);
+    return { id, family: family.id, material, variant, price, grade, clue, figure, purity, stability, tier,
+      vein, flaw, luster, density, crust, number: String(id + 1).padStart(2, '0') };
   });
 }
 
@@ -164,7 +200,7 @@ export function buyOre(save) {
   save.credits -= ore.price;
   run.ore = ore;
   // Identical decisions on two distinct stones no longer produce identical grain.
-  run.skin.seed = rngFor(run.seed, 'ore-grain', ore.id, ore.family, ore.figure)();
+  run.skin.seed = rngFor(run.seed, 'ore-grain', ore.id, ore.family, ore.material, ore.variant, ore.figure)();
   run.phase = 'reveal';
   return true;
 }
