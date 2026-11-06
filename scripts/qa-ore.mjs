@@ -23,7 +23,7 @@ const image = name => page.screenshot({ path: `${output}/${name}.png`, animation
 const step = () => page.locator('#stage').getAttribute('data-mode');
 const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 try {
-  await page.goto(origin+'?v=5', { waitUntil: 'load' });
+  await page.goto(origin+'?v=10', { waitUntil: 'load' });
   await page.waitForSelector('.ore-grid .ore-card');
   await page.waitForFunction(()=>[...document.querySelectorAll('.ore-thumbnail img')].every(img=>img.naturalWidth>0));
   await page.waitForTimeout(600);
@@ -97,16 +97,17 @@ try {
   assert.ok(rect, 'furnace button visible');
   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
   let down = false;
-  for (let n = 0; n < 210 && await step() === 'refine'; n++) {
+  for (let n = 0; n < 310 && await step() === 'refine'; n++) {
     // A cast can finish between two DOM reads; sample phase and temperature atomically.
     const reading = await page.evaluate(() => ({
       mode: document.querySelector('#stage')?.dataset.mode,
       phase: document.querySelector('#heat-step')?.textContent ?? '',
       temperature: Number(document.querySelector('#heat-number')?.textContent?.replace('°', '') ?? NaN),
+      target: (Number(document.querySelector('#thermo')?.dataset.lower) + Number(document.querySelector('#thermo')?.dataset.upper)) / 2,
     }));
     if (reading.mode !== 'refine') break;
     const desired = reading.phase === '原石升温' ||
-      (reading.phase === '熔球稳温' && (down ? reading.temperature < 77 : reading.temperature < 68));
+      (reading.phase === '熔球稳温' && (down ? reading.temperature < reading.target - .6 : reading.temperature <= reading.target - 1.3));
     if (desired && !down) { await page.mouse.down(); down = true; }
     else if (!desired && down) { await page.mouse.up(); down = false; }
     await page.waitForTimeout(75);

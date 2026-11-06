@@ -139,9 +139,31 @@ const purityBands = [[42, 64], [58, 78], [72, 88]];
 const centers = { river: 68, frost: 58, coal: 62, meteor: 49, ochre: 65 };
 const standardModels = ['straight', 'survival', 'bayonet'];
 const strangeModels = Object.keys(MODELS).filter(id => id !== 'blank' && !standardModels.includes(id));
-export const HEAT = Object.freeze({ initial: 35, melt: 65, lower: 65, upper: 78, danger: 86, preheat: 3.5, window: 7.5, good: 3, minimum: .8, burn: 1.2, cast: 1 });
-const refineDelta = { good: [12, 12], fair: [4, 0], failed: [-12, -18] };
-const freshHeat = () => ({ step: 'ore', temperature: HEAT.initial, elapsed: 0, stable: 0, hot: 0, result: null });
+export const HEAT = Object.freeze({ initial: 35, melt: 65, lower: 69, upper: 76, danger: 86, cold: 55,
+  preheat: 8, window: 12, minimum: 3, minQuality: 22, fair: 40, good: 65, excellent: 86, cast: 1.1 });
+export const REFINEMENT_RESULTS = Object.freeze({
+  excellent: { label: '精炼极佳', purity: 20, stability: 18, bonus: 8 },
+  good: { label: '精炼良好', purity: 10, stability: 8, bonus: 3 },
+  fair: { label: '普通成坯', purity: 2, stability: -4, bonus: -1 },
+  poor: { label: '勉强成坯', purity: -12, stability: -18, bonus: -7 },
+  failed: { label: '精炼失败', purity: 0, stability: 0, bonus: 0 },
+});
+export const REFINEMENT_FAILURES = Object.freeze({
+  burnt: '钢料烧损，无法成坯', frozen: '熔钢凝固，炉次报废',
+  unmelted: '原石未熔化，炉次报废', slag: '排渣不足，无法成坯',
+});
+const freshHeat = ore => ({ version: 2, step: 'ore', temperature: HEAT.initial, elapsed: 0, active: 0,
+  stable: 0, quality: 0, damage: 0, draft: 0, hot: 0, result: null,
+  drift: (ore?.figure ?? .5) * Math.PI * 2 });
+
+export const refinementRank = quality => quality >= HEAT.excellent ? 'excellent' : quality >= HEAT.good ? 'good' :
+  quality >= HEAT.fair ? 'fair' : quality >= HEAT.minQuality ? 'poor' : 'failed';
+
+export function heatBand(heat) {
+  const t = heat.active || 0, drift = heat.drift || 0;
+  const center = (HEAT.lower + HEAT.upper) / 2 + Math.sin(drift + t * .62) * 2.8 + Math.sin(drift * .71 + t * 1.43) * 1.2;
+  return { center, lower: center - 3.5, upper: center + 3.5 };
+}
 const slotWeights = {
   belly: [30, 48, 16, 6],
   edge: [8, 15, 53, 24],
@@ -179,7 +201,12 @@ export function freshRun(seed) {
 export function migrateSave(save) {
   if (!save || ![1, 2].includes(save.version) || !Number.isFinite(save.credits) || !Array.isArray(save.collection) ||
     ![...PHASES, 'reveal', 'broken'].includes(save.run?.phase) || !save.run.skin?.levels) return null;
-  if (save.version === 2) return save;
+  if (save.version === 2) {
+    // Keep the paid stone and wallet; old in-progress furnaces restart this station
+    // rather than interpreting the former timer as damage under the new rules.
+    if (save.run.phase === 'refine' && save.run.refining?.version !== 2) save.run.refining = freshHeat(save.run.ore);
+    return save;
+  }
   const run = save.run;
   if (run.ore) {
     const [low, high] = purityBands[run.ore.grade] || purityBands[0];
@@ -188,7 +215,7 @@ export function migrateSave(save) {
   run.batch = clamp(run.batch || 0, 0, BATCHES - 1);
   run.selected = (run.selected || 0) % LOT_SIZE;
   run.stability = clamp((run.ore?.stability ?? 60) + ((run.purity || 65) - 65) * .45, 0, 100);
-  run.refining = run.phase === 'refine' ? freshHeat() : null;
+  run.refining = run.phase === 'refine' ? freshHeat(run.ore) : null;
   run.legacyFittings = run.phase === 'fit';
   run.refinement = null;
   run.marks = {};
@@ -287,42 +314,83 @@ export function buyOre(save) {
 export function beginRefining(run) {
   if (run.phase !== 'reveal') return false;
   run.phase = 'refine';
-  run.refining = freshHeat();
+  run.refining = freshHeat(run.ore);
   return true;
 }
 
-export function advanceHeat(run, seconds, blowing) {
-  if (run.phase !== 'refine' || !run.refining || seconds <= 0) return;
+function failRefining(run, reason) {
   const heat = run.refining;
+  run.refinement = { result: 'failed', quality: Math.floor(heat.quality), damage: Math.round(heat.damage), reason,
+    stable: heat.stable, purity: 0, stability: 0 };
+  run.last = { type: 'refine-fail', label: REFINEMENT_FAILURES[reason] };
+  run.refining = null;
+  run.phase = 'broken';
+}
+
+function castRefining(run) {
+  const heat = run.refining;
+  heat.result = refinementRank(heat.quality);
+  if (heat.result === 'failed') return failRefining(run, 'slag');
+  heat.step = 'cast';
+  heat.elapsed = 0;
+}
+
+export function pourRefining(run) {
+  if (run.phase !== 'refine' || run.refining?.step !== 'molten' || run.refining.elapsed < HEAT.minimum ||
+      run.refining.quality < HEAT.minQuality) return false;
+  castRefining(run);
+  return true;
+}
+
+function heatTick(run, seconds, blowing) {
+  const heat = run.refining;
+  heat.elapsed += seconds;
   if (heat.step === 'cast') {
-    heat.elapsed += seconds;
     if (heat.elapsed >= HEAT.cast) {
-      const [purity, stability] = refineDelta[heat.result];
-      run.purity = clamp(run.ore.purity + purity, 0, 100);
-      run.stability = clamp(run.ore.stability + stability, 0, 100);
-      run.refinement = { result: heat.result, purity: run.purity, stability: run.stability };
+      const outcome = REFINEMENT_RESULTS[heat.result];
+      run.purity = clamp(run.ore.purity + outcome.purity, 0, 100);
+      run.stability = clamp(run.ore.stability + outcome.stability, 0, 100);
+      run.refinement = { result: heat.result, quality: Math.floor(heat.quality), damage: Math.round(heat.damage),
+        stable: heat.stable, purity: run.purity, stability: run.stability, bonus: outcome.bonus };
       run.refining = null;
       run.phase = 'forge';
     }
     return;
   }
-  heat.elapsed += seconds;
-  heat.temperature = clamp(heat.temperature + seconds * (blowing ? 30 : -22), 0, 100);
+  // Blower inertia remains after release: the player must stop before the upper edge.
+  const previousDraft = heat.draft;
+  heat.draft = Number(Boolean(blowing)) + (heat.draft - Number(Boolean(blowing))) * Math.exp(-seconds / .27);
+  heat.temperature = clamp(heat.temperature + seconds * (-18 + 46 * (previousDraft + heat.draft) / 2), 0, 100);
   if (heat.step === 'ore') {
-    if (heat.temperature >= HEAT.melt || heat.elapsed >= HEAT.preheat) {
-      heat.result = heat.temperature < HEAT.melt ? 'failed' : null;
-      heat.temperature = Math.max(HEAT.melt, heat.temperature);
+    if (heat.temperature >= HEAT.melt) {
       heat.step = 'molten';
       heat.elapsed = 0;
-    }
+    } else if (heat.elapsed >= HEAT.preheat) failRefining(run, 'unmelted');
     return;
   }
-  if (heat.temperature >= HEAT.lower && heat.temperature <= HEAT.upper) heat.stable += seconds;
+  heat.active += seconds;
+  const band = heatBand(heat);
+  const inside = heat.temperature >= band.lower && heat.temperature <= band.upper;
+  const damage = heat.temperature >= HEAT.danger ? 60 * (1 + (heat.temperature - HEAT.danger) / 18) :
+    heat.temperature <= HEAT.cold ? 45 * (1 + (HEAT.cold - heat.temperature) / 20) : 0;
   if (heat.temperature >= HEAT.danger) heat.hot += seconds;
-  if (heat.hot >= HEAT.burn || heat.elapsed >= (heat.result ? .6 : HEAT.window)) {
-    heat.result ||= heat.hot >= HEAT.burn || heat.stable < HEAT.minimum ? 'failed' : heat.stable >= HEAT.good ? 'good' : 'fair';
-    heat.step = 'cast';
-    heat.elapsed = 0;
+  heat.damage = clamp(heat.damage + damage * seconds, 0, 100);
+  if (inside) heat.stable += seconds;
+  const precision = Math.max(0, 1 - Math.abs(heat.temperature - band.center) / 3.5);
+  heat.quality = clamp(heat.quality + seconds * (inside ? 7 + precision * 5.5 : -.8) - damage * seconds * .28, 0, 100);
+  if (heat.damage >= 100) {
+    failRefining(run, heat.temperature >= HEAT.danger ? 'burnt' : 'frozen');
+  } else if (heat.elapsed >= HEAT.window) castRefining(run);
+}
+
+export function advanceHeat(run, seconds, blowing) {
+  if (run.phase !== 'refine' || !run.refining || !Number.isFinite(seconds) || seconds <= 0) return;
+  // Bounded substeps make failure and quality consistent across frame rates.
+  let remaining = seconds;
+  while (remaining > 1e-8 && run.phase === 'refine') {
+    const tick = Math.min(remaining, 1 / 120);
+    heatTick(run, tick, blowing);
+    remaining -= tick;
   }
 }
 
@@ -479,7 +547,7 @@ export function appraise(save) {
   const fit = FITS.find(item => item.id === run.fit);
   if (run.phase !== 'fit' || !fit) return null;
   const roll = rngFor(run.seed, 'review');
-  const base = 41 + run.ore.grade * 5 + run.purity * .19 + run.work * .94 - run.cracks * 2.9;
+  const base = 41 + run.ore.grade * 5 + run.purity * .19 + run.work * .94 - run.cracks * 2.9 + (run.refinement?.bonus || 0);
   const stats = fit.delta.map((delta, index) => clamp(Math.round(base + delta + (roll() - .5) * 12 + (index > 3 ? run.skin.levels.fx * 2 : 0)), 20, 100));
   const score = Math.round(stats.reduce((sum, stat) => sum + stat, 0) / stats.length);
   const grade = score >= 90 ? 4 : score >= 80 ? 3 : score >= 66 ? 2 : 1;

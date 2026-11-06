@@ -1,9 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  freshSave, offers, inspectOre, WINDOW_PRICE, MIN_PRICE, mineralHeritage, migrateSave, appraise, fitOptions, buyOre, beginRefining, advanceHeat, ORE_TIERS,
+  freshSave, offers, inspectOre, WINDOW_PRICE, MIN_PRICE, mineralHeritage, migrateSave, appraise, fitOptions, buyOre, beginRefining, advanceHeat, heatBand, ORE_TIERS,
   RARE_ODDS, oreSignals, familyOf, strike, finishForge,
 } from '../forge.js';
+
+function refine(save) {
+  let blowing = true;
+  for (let i = 0; i < 1500 && save.run.phase === 'refine'; i++) {
+    const heat = save.run.refining;
+    const target = heatBand(heat).center, predicted = heat.temperature + heat.draft * 3;
+    if (heat.step === 'molten') {
+      if (predicted >= target + 1) blowing = false;
+      else if (predicted <= target - 1) blowing = true;
+    }
+    advanceHeat(save.run, 1 / 60, blowing);
+  }
+}
 
 test('three stones have inspectable but non-spoiling traits across price tiers', () => {
   for (let seed = 0; seed < 300; seed++) {
@@ -58,7 +71,7 @@ test('opening costs exactly once and persists origin identity through refining a
   assert.equal(a.credits, 76 - original.price);
   assert.equal(a.run.skin.seed, b.run.skin.seed);
   beginRefining(a.run);
-  for (let i = 0; i < 1000 && a.run.phase === 'refine'; i++) advanceHeat(a.run, .02, i < 55);
+  refine(a);
   assert.equal(a.run.phase, 'forge');
   assert.equal(a.run.ore.family, original.family);
   const originSeed = a.run.skin.seed;
@@ -92,7 +105,7 @@ test('mineral identity survives refining, six hits, appraisal and archive reload
   const save=freshSave(390);buyOre(save);
   const source=mineralHeritage(save.run.ore);
   beginRefining(save.run);
-  while(save.run.phase==='refine')advanceHeat(save.run,.025,(save.run.refining?.temperature ?? 90)<72);
+  refine(save);
   for(let i=0;i<6;i++)strike(save.run,'belly');
   assert.deepEqual(mineralHeritage(save.run.ore),source);
   finishForge(save.run);save.run.fit=fitOptions(save.run)[0].id;appraise(save);

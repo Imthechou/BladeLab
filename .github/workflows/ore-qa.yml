@@ -17,6 +17,8 @@ on:
       - "scripts/qa-ore-inspection.mjs"
       - "scripts/qa-ore-catalog.mjs"
       - "scripts/qa-ore-preview.mjs"
+      - "scripts/qa-refining.mjs"
+      - "qa.js"
       - "ore-catalog.html"
       - "scripts/ore-geometry.mjs"
       - "assets/models/ore_*.glb"
@@ -25,6 +27,46 @@ on:
 permissions:
   contents: read
 jobs:
+  refining:
+    name: Refining quality and furnace failure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests
+        run: npm test
+      - name: Install Chromium
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Start game
+        run: |
+          npm start > /tmp/bladelab-refining.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl --silent --fail http://127.0.0.1:8217/ > /dev/null; then exit 0; fi
+            sleep 0.25
+          done
+          cat /tmp/bladelab-refining.log
+          exit 1
+      - name: Real controls, four result tiers, four failure reasons and inherited steel
+        run: node scripts/qa-refining.mjs
+      - name: Published refining success and failure
+        env:
+          QA_ORIGIN: https://imthechou.github.io/BladeLab/preview/ore-v5/
+          QA_STORAGE_KEY: bladelab.ore-v5.preview.1
+          QA_OUTPUT: artifacts/refining/live
+          QA_QUICK: '1'
+        run: node scripts/qa-refining.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bladelab-refining-screens
+          path: artifacts/refining
+          retention-days: 7
+
   mobile-ore:
     runs-on: ubuntu-24.04
     timeout-minutes: 18
