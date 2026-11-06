@@ -1,10 +1,10 @@
 import {
-  STORAGE_KEY, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, ORE_VARIANTS, RARE_ODDS, oreSignals, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
+  STORAGE_KEY, WINDOW_PRICE, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, ORE_VARIANTS, RARE_ODDS, oreSignals, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, fractureRisk, strike, finishForge,
-  fitOptions, refreshFittings, appraise, signature,
-} from './forge.js?v=4';
-import { ForgeStage } from './stage.js?v=4';
-import { ForgeSound } from './sound.js?v=2';
+  fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage,
+} from './forge.js?v=5';
+import { ForgeStage } from './stage.js?v=5';
+import { ForgeSound } from './sound.js?v=5';
 import { createQaSession } from './qa.js?v=2.1';
 
 const get = id => document.getElementById(id);
@@ -34,6 +34,9 @@ let drag;
 let trayKey;
 let webglError = false;
 let storageFailed = false;
+let inspectionMode = 'natural';
+let toolStone = '';
+let echoTimer;
 
 function restore() {
   if (qa) return qa.save;
@@ -90,52 +93,41 @@ function render() {
   const status = { ore: '原石在台', reveal: '已开料', refine: '炉温实时', forge: '可自由落锤', fit: '试装预览', appraise: '成品已入藏', broken: '炉次结束' };
   get('stage-state').textContent = webglError ? '3D 暂不可用' : status[phase];
   const hints = {
-    ore: '左右翻料 · 拖动转石', reveal: '拖动查看矿脉断面', refine: '按住鼓风 · 松手散热',
+    ore: '拖动转石', reveal: '同源矿相 · 拖动检视', refine: '按住鼓风 · 松手散热',
     forge: matchMedia('(pointer: coarse)').matches ? '轻点刀身 · 落点影响出纹' : '直接轻点刀身 · 空格落锤', fit: '拖动转刀，比较装配',
     appraise: '拖动检视成刀', broken: '保留本次锻打记录',
   };
   get('stage-hint').textContent = hints[phase];
   if (phase === 'ore') {
-    const family = familyOf(ore.family);
-    const signs = oreSignals(ore);
-    const mineral = oreMaterialOf(ore);
-    title('01 / ROUGH STOCK', '看石皮，赌内芯', '观察裂口和矿脉，比较本批三块原石。外观提供线索，但切开前谁都不知道成色。');
-    readout.innerHTML = `<div class="info-block ore-inspection">
-      <div class="info-line"><small>LOT ${ore.number} · ${ORE_TIERS[ore.tier]}</small><b class="readout-number">${ore.price} CR</b></div>
-      <strong>${family.name} <small>· ${mineral.name} / ${ORE_VARIANTS[ore.variant ?? 0]}</small></strong>
-      <div class="ore-signals" aria-label="五项石皮观察线索">
-        <span><em>矿脉</em>${signs.vein}</span><span><em>裂隙</em>${signs.shell}</span><span><em>亮点</em>${signs.glow}</span>
-        <span><em>密实度</em>${signs.density}</span><span><em>石皮</em>${signs.crust}</span>
-      </div>
-      <div class="ore-odds"><span>该价位稀质概率</span><b>${RARE_ODDS[ore.tier]}%</b><small>按价位分布 · 非单块保证</small></div>
-      <p>${family.hint}</p>
-    </div>`;
-    actions.innerHTML = button('buy', '切开 ' + ore.number + ' 号 · 支付 ' + ore.price + ' CR', { off: ore.price > save.credits }) +
-      button('next-batch', run.batch === BATCHES - 1 ? '已到最后一批' : '免费换一批', { kind: 'secondary', off: run.batch === BATCHES - 1 }) +
-      `<span class="action-note">${ore.price > save.credits ? '信用点不足，可看本批更便宜的矿。' : '余额 ' + save.credits + ' → ' + (save.credits - ore.price) + ' CR · 一刀开出，不可退料'}</span>`;
+    const family = familyOf(ore.family), mineral = oreMaterialOf(ore);
+    title('01 / SELECT A STONE', family.name, mineral.name + ' · ' + ORE_TIERS[ore.tier]);
+    readout.innerHTML = `<div class="ore-decision"><span>开料 <b>${ore.price} CR</b></span><span>价位稀质率 <b>${RARE_ODDS[ore.tier]}%</b></span></div>`;
+    actions.innerHTML = button('buy', '切开原石 · ' + ore.price + ' CR', { off: ore.price > save.credits }) +
+      button('next-batch', run.batch === BATCHES - 1 ? '最后一批' : '换一批 · 免费', { kind: 'secondary', off: run.batch === BATCHES - 1 }) +
+      `<span class="action-note">${ore.price > save.credits ? '余额不足，请选价格更低的原石' : '余额 ' + save.credits + ' → ' + (save.credits - ore.price) + ' CR · 切开后不能退料'}</span>`;
   } else if (phase === 'reveal') {
     const family = familyOf(ore.family);
     if (revealPending) {
-      title('01 / THE CUT', '正在切开原石…', '石皮已经破开，等切面完全露出后才能确认矿芯品质。');
+      title('01 / THE CUT', '开石见芯', '');
       readout.innerHTML = `<div class="info-block ore-report ore-suspense">
         <div class="info-line"><small>开料完成 · LOT ${ore.number}</small><b class="readout-number">−${ore.price} CR</b></div>
-        <strong>剖开矿芯，读取矿相</strong>
+        <strong>石皮分离中…</strong>
         <div class="ore-suspense-track"><i></i></div>
-        <small>正在显露纯度、稳定性与矿脉</small>
+
       </div>`;
       actions.innerHTML = button('to-refine', '切面鉴定中…', { off: true });
     } else {
-      const signs = oreSignals(ore);
-      const mineral = oreMaterialOf(ore);
-      title('01 / CUT OPEN', family.name + ' · ' + GRADES[ore.grade], '翻动切面检查矿芯。矿脉色泽会留在钢坯中，精炼可改善纯度和稳定性。');
-      readout.innerHTML = `<div class="info-block ore-report ore-result grade-${ore.grade}">
-        <div class="info-line"><small>LOT ${ore.number} · ${mineral.name}</small><b class="readout-number">−${ore.price} CR</b></div>
-        <div class="ore-grade"><span class="ore-grade-icon">${['◆','✦','✧'][ore.grade]}</span><div><small>切石结果</small><strong>${GRADES[ore.grade]}矿芯</strong></div><small>已扣费 · 不可退料</small></div>
-        <div class="report-row"><span>纯净度</span><b id="ore-purity">${ore.purity}</b><small>${ore.purity >= 73 ? '内芯纯净，易成好钢' : '精炼有提升空间'}</small></div>
-        <div class="report-row"><span>稳定性</span><b id="ore-stability">${stabilityOf(ore.stability)}</b><small>决定锻打断裂风险</small></div>
-        <div class="report-vein"><i class="vein-sample" style="--vein:${family.color};--vein-dark:${family.dark}"></i><span><small>原矿纹理继承 · ${signs.vein}</small><strong>${LOOKS.pattern[family.pattern]} / ${LOOKS.film[family.film]}</strong></span></div>
+      const mineral = oreMaterialOf(ore), heritage = mineralHeritage(ore);
+      title('01 / INSIDE THE STONE', GRADES[ore.grade] + ' · ' + family.name, '矿相已揭晓');
+      readout.innerHTML = `<div class="ore-report ore-result grade-${ore.grade}">
+        <div class="ore-grade"><span class="ore-grade-icon">${['◆','✦','✧'][ore.grade]}</span><div><small>${mineral.name}</small><strong>${GRADES[ore.grade]}矿芯</strong></div><small>−${ore.price} CR</small></div>
+        <div class="mineral-meters">
+          <div><span>纯净度</span><b id="ore-purity">${ore.purity}</b><i style="--value:${ore.purity}%"></i></div>
+          <div><span>稳定性</span><b id="ore-stability">${stabilityOf(ore.stability)}</b><i style="--value:${ore.stability}%"></i></div>
+        </div>
+        <button type="button" class="heritage-preview" data-action="preview-mineral" aria-pressed="false"><span class="heritage-swatch" style="--core:${mineral.core};--steel:${mineral.steel}"></span><span><small>这块矿的钢纹</small><b>${heritage.name}</b></span><strong>预览刀身 ↗</strong></button>
       </div>`;
-      actions.innerHTML = button('to-refine', '确认矿芯 · 送去精炼');
+      actions.innerHTML = button('to-refine', '送去精炼');
     }
   } else if (phase === 'refine') {
     title('02 / HEAT CONTROL', '控住火候', '把原石熔化，再让熔球尽量留在绿区。温度升得太快就松手。');
@@ -170,25 +162,44 @@ function render() {
     readout.innerHTML = info('断裂记录', '第 ' + run.hits + ' 锤 · ' + fmt(run.last.risk), '本炉开料已消耗 ' + ore.price + ' 信用点。');
     actions.innerHTML = button('restart', '再开一炉');
   }
-  renderTray(run, fit);
   stage?.sync(run, ore, fit);
+  renderTools(run,ore);
+  renderTray(run, fit);
+}
+
+function renderTools(run,ore) {
+  get('ore-tools').hidden=run.phase!=='ore';
+  if(run.phase!=='ore')return;
+  const key=run.seed+'|'+ore.id;
+  if(toolStone!==key){inspectionMode='natural';toolStone=key;}
+  get('inspection-note').textContent=inspectionMode==='side' ? '斜光下看裂隙和颗粒' : inspectionMode==='lamp' ? '看亮点；晶矿会透出微光' : ore.window ? '小窗只是局部，内部仍有未知' : '转动原石，寻找露脉与石皮';
+  document.querySelectorAll('[data-action="inspect-light"]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===inspectionMode)));
+  const windowButton=get('window-ore');
+  windowButton.disabled=ore.window || save.credits<ore.price+WINDOW_PRICE;
+  windowButton.querySelector('span').innerHTML=ore.window ? '已擦窗' : '擦窗 <small>'+WINDOW_PRICE+' CR</small>';
+  windowButton.setAttribute('aria-label',ore.window ? '这块原石已经擦窗' : '擦开一小块石皮，花费'+WINDOW_PRICE+'信用点');
 }
 
 function renderTray(run, fit) {
   const { phase } = run;
-  const key = [phase, run.batch, run.selected, run.refreshed, run.fit, phase === 'forge' && run.last?.hit].join('|');
+  const key = [phase, run.batch, run.selected, run.refreshed, run.fit, JSON.stringify(run.inspections), phase === 'forge' && run.last?.hit].join('|');
   if (key === trayKey) return;
   trayKey = key;
   if (phase === 'ore') {
-    tray.innerHTML = `<div class="tray-head"><h2>本批三块原石</h2><small>点选对比 · 价格决定稀质概率</small></div>
-      <div class="ore-grid">${offers(run).map((stone, n) => {
-        const rock = familyOf(stone.family), signs = oreSignals(stone), mineral = oreMaterialOf(stone);
-        return `<button type="button" class="ore-card ${n === run.selected ? 'is-selected' : ''}" data-action="select-ore" data-id="${n}" aria-pressed="${n === run.selected}" aria-label="第${n + 1}块 ${rock.name}，${mineral.name}，${stone.price}信用点，${signs.vein}、${signs.shell}">
-          <span class="ore-card-top"><b>LOT ${stone.number}</b><span>${ORE_TIERS[stone.tier]}</span></span>
-          <span class="ore-card-body"><i class="ore-chip" style="--stone:${mineral.vein};--stone-dark:${mineral.base};--veins:${stone.vein/100};--cracks:${stone.flaw/100}"></i><span><b>${rock.name}</b><small>${mineral.name}</small><small>${signs.vein} · ${signs.shell}</small></span></span>
-          <span class="ore-card-footer"><strong>${stone.price} CR</strong><span>稀质 ${RARE_ODDS[stone.tier]}%</span></span>
-        </button>`;
-      }).join('')}</div>`;
+    tray.innerHTML = `<div class="ore-grid">${offers(run).map((stone,n) => {
+      const rock=familyOf(stone.family);
+      return `<button type="button" class="ore-card ${n===run.selected ? 'is-selected' : ''}" data-action="select-ore" data-id="${n}" aria-pressed="${n===run.selected}" aria-label="第${n+1}块 ${rock.name}，${stone.price}信用点，价位稀质率${RARE_ODDS[stone.tier]}%">
+        <span class="ore-card-top"><b>${stone.number}</b><span>${stone.window ? '已擦窗' : ORE_TIERS[stone.tier]}</span></span>
+        <span class="ore-thumbnail"><img data-stone="${stone.id}" alt="${rock.name}实物缩略图"><i></i></span>
+        <b class="ore-card-name">${rock.name}</b><span class="ore-card-footer"><strong>${stone.price} CR</strong><span>${RARE_ODDS[stone.tier]}%</span></span>
+      </button>`;
+    }).join('')}</div>`;
+    const batch=run.batch;
+    for(const stone of offers(run)) stage?.oreThumbnail(stone).then(src => {
+      if(save.run.phase!=='ore' || save.run.batch!==batch)return;
+      const img=tray.querySelector(`img[data-stone="${stone.id}"]`);
+      if(img){img.src=src;img.closest('.ore-thumbnail').classList.add('is-loaded');}
+    }).catch(error => console.warn('Specimen preview',error));
   } else if (phase === 'fit') {
     tray.innerHTML = `<div class="tray-head"><h2>挑选配件</h2><small>FITTING TRAY / ${run.refreshed ? '02' : '01'}</small></div><div class="fit-grid">${fitOptions(run).map(item => `<button type="button" class="fit-card" data-action="select-fit" data-id="${item.id}" aria-pressed="${fit?.id === item.id}"><span class="fit-colors"><i style="--sample:${item.color}"></i><i style="--sample:${item.accent}"></i><small>${item.role}</small></span><b>${item.name}</b><small>${item.parts}</small><small class="fit-stats">${item.delta.map((n, i) => n ? STAT_NAMES[i] + ' ' + (n > 0 ? '+' : '−') + Math.abs(n) : '').filter(Boolean).join(' · ')}</small></button>`).join('')}</div>`;
   } else {
@@ -361,10 +372,30 @@ document.addEventListener('click', event => {
   }
   sound.unlock();
   const { action, id } = control.dataset;
-  if (['ore-prev', 'ore-next', 'next-batch', 'buy', 'select-ore'].includes(action)) qa?.input();
+  if (['ore-prev', 'ore-next', 'next-batch', 'buy', 'select-ore', 'window-ore', 'tap-ore', 'inspect-light'].includes(action)) qa?.input();
   const run = save.run;
   let message;
-  if (action === 'select-ore' && run.phase === 'ore' && Number.isInteger(Number(id)) && Number(id) >= 0 && Number(id) < LOT_SIZE) {
+  if(action==='inspect-light' && run.phase==='ore'){
+    inspectionMode=inspectionMode===id ? 'natural' : id;
+    stage?.setInspection(inspectionMode);renderTools(run,offers(run)[run.selected]);return;
+  } else if(action==='tap-ore' && run.phase==='ore'){
+    const stone=offers(run)[run.selected];
+    stage?.tapOre();sound.inspect(stone);
+    const echo=get('ore-echo');
+    echo.classList.remove('is-echoing');void echo.offsetWidth;echo.classList.add('is-echoing');
+    echo.style.setProperty('--ring',(.35+stone.density/100)+'s');
+    get('inspection-note').textContent=stone.density>=70 ? '叩声清亮 · 余音较长' : stone.density<49 ? '叩声低闷 · 余音短' : '叩声偏实 · 回音适中';
+    clearTimeout(echoTimer);echoTimer=setTimeout(()=>{echo.classList.remove('is-echoing');renderTools(run,stone);},1500);return;
+  } else if(action==='window-ore' && inspectOre(save)){
+    inspectionMode='window';stage?.setInspection('window');
+    sound.play('polish',.75);
+  } else if(action==='preview-mineral' && run.phase==='reveal' && !revealPending){
+    const preview=stage?.toggleMineralPreview();
+    control.setAttribute('aria-pressed',String(Boolean(preview)));
+    control.querySelector('strong').textContent=preview ? '回看切面 ↩' : '预览刀身 ↗';
+    get('stage-hint').textContent=preview ? '同源钢纹预览 · 后续锤击仍会变化' : '同源矿相 · 拖动检视';
+    return;
+  } else if (action === 'select-ore' && run.phase === 'ore' && Number.isInteger(Number(id)) && Number(id) >= 0 && Number(id) < LOT_SIZE) {
     run.selected = Number(id);
   } else if (['ore-prev', 'ore-next'].includes(action) && run.phase === 'ore') {
     run.selected = (run.selected + (action === 'ore-next' ? 1 : LOT_SIZE - 1)) % LOT_SIZE;
@@ -381,7 +412,7 @@ document.addEventListener('click', event => {
       render();
       sound.play(run.ore.grade === 2 ? 'surge' : 'shift');
       say(GRADES[run.ore.grade] + '矿芯 · 纯净 ' + run.ore.purity, run.ore.grade === 2 ? 'surge' : '');
-    }, 790);
+    }, 1050);
   } else if (action === 'to-refine' && !revealPending && beginRefining(run)) {
     sound.prepare();
   } else if (action === 'finish') {

@@ -23,7 +23,8 @@ const overflow = async () => page.evaluate(() => document.documentElement.scroll
 try {
   await page.goto('http://127.0.0.1:8217/?v=3', { waitUntil: 'load' });
   await page.waitForSelector('.ore-grid .ore-card');
-  await page.waitForTimeout(1100);
+  await page.waitForFunction(()=>[...document.querySelectorAll('.ore-thumbnail img')].every(img=>img.naturalWidth>0));
+  await page.waitForTimeout(600);
   assert.equal(await step(), 'ore');
   assert.equal(await page.locator('.ore-card').count(), 3);
   assert.ok((await overflow()) <= 2, 'selection causes horizontal overflow');
@@ -38,6 +39,24 @@ try {
   await image('01c-third-stone-390');
   await page.locator('.ore-card').nth(1).click();
   assert.match(await page.locator('#ore-position').innerText(), /2 \/ 3/);
+  const freeBalance=Number(await page.locator('#credits').innerText());
+  await page.locator('[data-action="inspect-light"][data-id="side"]').click();
+  assert.equal(await page.locator('[data-id="side"]').getAttribute('aria-pressed'),'true');
+  await image('01d-side-light');
+  await page.locator('[data-action="inspect-light"][data-id="lamp"]').click();
+  await image('01e-mineral-lamp');
+  await page.locator('[data-action="tap-ore"]').click();
+  assert.ok((await page.locator('#inspection-note').innerText()).includes('叩声'));
+  assert.equal(Number(await page.locator('#credits').innerText()),freeBalance);
+  await page.locator('[data-action="window-ore"]').click();
+  assert.equal(Number(await page.locator('#credits').innerText()),freeBalance-3);
+  assert.ok(await page.locator('[data-action="window-ore"]').isDisabled());
+  assert.equal(await page.locator('#ore-purity').count(),0,'window must not disclose exact purity');
+  await page.waitForTimeout(500);await image('01f-paid-window');
+  await page.reload({waitUntil:'load'});
+  await page.waitForFunction(()=>[...document.querySelectorAll('.ore-thumbnail img')].every(img=>img.naturalWidth>0));
+  assert.equal(Number(await page.locator('#credits').innerText()),freeBalance-3);
+  assert.ok(await page.locator('[data-action="window-ore"]').isDisabled());
   const paid = Number((await page.locator('[data-action="buy"]').innerText()).match(/(\d+) CR/)?.[1]);
   const before = Number(await page.locator('#credits').innerText());
   assert.ok(paid >= 14 && paid <= 40);
@@ -46,12 +65,18 @@ try {
   await page.waitForSelector('.ore-result', { timeout: 7000 });
   assert.equal(Number(await page.locator('#credits').innerText()), before - paid);
   assert.equal(await page.locator('.ore-grade').count(), 1);
-  await page.waitForTimeout(250);
+  await page.waitForTimeout(1100);
   await image('02-split-reveal-390');
 
   await page.setViewportSize({ width: 375, height: 812 });
   assert.ok((await overflow()) <= 2, 'reveal causes horizontal overflow at 375px');
   await image('03-split-reveal-375');
+  await page.locator('[data-action="preview-mineral"]').click();
+  assert.equal(await page.locator('[data-action="preview-mineral"]').getAttribute('aria-pressed'),'true');
+  await page.waitForTimeout(700);await image('03b-source-steel-375');
+  await page.locator('[data-action="preview-mineral"]').click();
+  assert.equal(await page.locator('[data-action="preview-mineral"]').getAttribute('aria-pressed'),'false');
+  const source=await page.evaluate(()=>JSON.parse(localStorage.getItem('bladelab.forge.1')).run.ore);
   await page.locator('[data-action="to-refine"]').click();
   assert.equal(await step(), 'refine');
   await image('04-refining-375');
@@ -100,6 +125,11 @@ try {
   await page.locator('[data-action="appraise"]').click();
   assert.equal(await step(), 'appraise');
   await image('06-appraised-375');
+  const archived=await page.evaluate(()=>JSON.parse(localStorage.getItem('bladelab.forge.1')).collection[0]);
+  assert.equal(archived.ore.material,source.material);assert.equal(archived.ore.figure,source.figure);
+  assert.equal(archived.ore.window,true);
+  await page.reload({waitUntil:'load'});await page.waitForTimeout(600);
+  assert.equal(await step(),'appraise');
   await page.locator('#collection').click();
   assert.ok((await page.locator('#vault-list .brief').count()) >= 1);
   await page.locator('#close-vault').click();

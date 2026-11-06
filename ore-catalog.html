@@ -34,8 +34,8 @@ aside{font-size:11px;color:#918f87;margin:16px 0 2px}
 <section><h2>开料 / 观察</h2><div class="controls" id="grading"></div><div id="info"></div></section>
 <aside>本页为美术验收工具，素材与实际锻造使用相同的 GLB、Shader 和切面代码。保存的成刀不受此页面影响。</aside>
 <script type="module">
-import { FAMILIES, ORE_VARIANTS, ORE_MATERIALS, oreMaterialOf, oreSignals, freshRun } from './forge.js?v=4';
-import { ForgeStage } from './stage.js?v=4';
+import { FAMILIES, ORE_VARIANTS, ORE_MATERIALS, oreMaterialOf, oreSignals, freshRun } from './forge.js?v=5';
+import { ForgeStage } from './stage.js?v=5';
 const stage = new ForgeStage(document.getElementById('ore-canvas'));
 const run = freshRun(99);
 let family='river',variant=0,material='river_gray',grade=2,open=false;
@@ -51,13 +51,13 @@ const obj={id:7,family,variant,material,figure:.54,grade,vein:grade===2?82:grade
  luster:grade===2?78:grade===1?54:35,density:grade===2?86:grade===1?61:37,crust:grade===2?25:grade===1?48:72,
  purity:grade===2?88:grade===1?70:49,stability:grade===2?78:grade===1?61:44,clue:1,tier:2,price:32,number:'08'};
 const rock=oreMaterialOf(obj),signs=oreSignals(obj);
-run.phase=open?'reveal':'ore';
+run.phase=open?'reveal':'ore';run.ore=open?obj:null;
 stage.sync(run,obj,null);
 el('families').innerHTML=FAMILIES.map(f=>node('family',f.id,f.name,f.id===family)).join('');
 el('variants').innerHTML=ORE_VARIANTS.map((v,i)=>node('variant',i,v,i===variant)).join('');
 el('materials').innerHTML=ORE_MATERIALS.map(m=>`<button data-action="material" data-id="${m.id}" aria-pressed="${m.id===material}">
 <i style="--m1:${m.base};--m2:${m.vein}"></i><span>${m.name}</span></button>`).join('');
-el('grading').innerHTML=node('toggle','',open?'合上原石':'切开检视',open)+[0,1,2].map(g=>node('grade',g,['普通','良质','稀质'][g],g===grade)).join('');
+el('grading').innerHTML=node('toggle','',open?'合上原石':'切开检视',open)+node('steel','','同源刀身',stage.previewSteel)+[0,1,2].map(g=>node('grade',g,['普通','良质','稀质'][g],g===grade)).join('');
 el('info').innerHTML=`<span>材质：${rock.name}</span><span>造型：${ORE_VARIANTS[variant]}</span>`+
  `<span>矿脉：${signs.vein}</span><span>裂隙：${signs.shell}</span><span>亮点：${signs.glow}</span>`+
  `<span>密实：${signs.density}</span><span>石皮：${signs.crust}</span>`;
@@ -69,10 +69,12 @@ switch(b.dataset.action){
  case 'variant':variant=Number(b.dataset.id);open=false;break;
  case 'material':material=b.dataset.id;family=ORE_MATERIALS.find(x=>x.id===material).family;open=false;break;
  case 'grade':grade=Number(b.dataset.id);break;
- case 'toggle':open=!open;break;
+ case 'steel':open=true;select();if(!stage.previewSteel)stage.toggleMineralPreview();return;
+ case 'toggle':open=!open;stage.previewSteel=false;break;
 }
 select();
 });
+globalThis.oreReview={stage,run};
 select();
 stage.prepare().catch(error=>console.error('Catalog GLB',error));
 </script>

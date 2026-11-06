@@ -15,6 +15,7 @@ const families=['river','frost','coal','meteor','ochre'];
 try{
  await page.goto('http://127.0.0.1:8217/ore-catalog.html',{waitUntil:'load'});
  await page.waitForSelector('button[data-action="material"]');
+ await page.waitForFunction(()=>window.oreReview?.stage.mesh);
  await page.waitForTimeout(450);
  assert.equal(await page.locator('button[data-action="material"]').count(),12);
  assert.equal(await page.locator('button[data-action="variant"]').count(),4);
@@ -33,7 +34,7 @@ try{
    }));
  });
  assert.equal(glb.length,20);
- assert.ok(glb.every(g=>g.vertices>=80 && g.vertices<240 && g.triangles===320));
+ assert.ok(glb.every(g=>g.vertices>=600 && g.vertices<720 && g.triangles===1280));
  for(const family of families){
    await page.locator(`button[data-action="family"][data-id="${family}"]`).click();
    await page.waitForTimeout(350);
@@ -48,10 +49,30 @@ try{
  }
  const materialIds=await page.locator('button[data-action="material"]').evaluateAll(
    buttons=>buttons.map(b=>b.dataset.id));
+ const steelPrints=[];
  for(const id of materialIds){
    await page.locator(`button[data-action="material"][data-id="${id}"]`).click();
    assert.equal(await page.locator(`button[data-action="material"][data-id="${id}"]`).getAttribute('aria-pressed'),'true');
+   await page.waitForTimeout(220);
+   await page.locator('.scene').screenshot({path:`${out}/material-${id}-shell.png`,animations:'disabled'});
+   await page.locator('button[data-action="grade"][data-id="2"]').click();
+   await page.locator('button[data-action="toggle"]').click();
+   await page.waitForTimeout(850);
+   await page.locator('.scene').screenshot({path:`${out}/material-${id}-cut.png`,animations:'disabled'});
+   await page.locator('button[data-action="steel"]').click();
+   await page.waitForFunction(()=>window.oreReview.stage.shown==='straight');
+   await page.waitForTimeout(300);
+   const inherited=await page.evaluate(()=>{
+     const stage=window.oreReview.stage,u=stage.active.uniforms;
+     return {style:u.fOreStyle.value,family:u.fOreFamily.value,seed:u.fOreSeed.value};
+   });
+   assert.equal(inherited.style,materialIds.indexOf(id));
+   assert.equal(inherited.seed,.54);
+   const image=await page.locator('.scene').screenshot({path:`${out}/material-${id}-steel.png`,animations:'disabled'});
+   steelPrints.push(image.toString('base64'));
+
  }
+ assert.equal(new Set(steelPrints).size,12,'twelve mineral fingerprints must render differently');
  await page.locator('button[data-action="material"][data-id="frost_quartz"]').click();
  for(const [grade,label] of [[0,'ordinary'],[1,'good'],[2,'rare']]){
    await page.locator(`button[data-action="grade"][data-id="${grade}"]`).click();

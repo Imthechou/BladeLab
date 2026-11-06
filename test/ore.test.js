@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  freshSave, offers, buyOre, beginRefining, advanceHeat, ORE_TIERS,
+  freshSave, offers, inspectOre, WINDOW_PRICE, MIN_PRICE, mineralHeritage, migrateSave, appraise, fitOptions, buyOre, beginRefining, advanceHeat, ORE_TIERS,
   RARE_ODDS, oreSignals, familyOf, strike, finishForge,
 } from '../forge.js';
 
@@ -66,4 +66,39 @@ test('opening costs exactly once and persists origin identity through refining a
   assert.equal(a.run.skin.seed, originSeed);
   assert.equal(a.run.ore.vein, original.vein);
   assert.ok(finishForge(a.run));
+});
+
+test('window samples charge once per stone, persist, and never price the inspected stone out', () => {
+  const save=freshSave(892), run=save.run;
+  const original=offers(run)[0],credits=save.credits;
+  assert.equal(inspectOre(save),true);
+  assert.equal(save.credits,credits-WINDOW_PRICE);
+  assert.equal(inspectOre(save),false);
+  const opened=offers(run)[0];
+  assert.equal(opened.window,true);
+  assert.deepEqual({...opened,window:false},original);
+  run.selected=1; assert.equal(offers(run)[1].window,false);
+  const restored=migrateSave(JSON.parse(JSON.stringify(save)));
+  restored.run.selected=0;assert.equal(offers(restored.run)[0].window,true);
+  run.selected=2;const selected=offers(run)[2];save.credits=selected.price+WINDOW_PRICE-1;
+  const balance=save.credits;
+  assert.equal(inspectOre(save),false);assert.equal(save.credits,balance);
+  save.credits=MIN_PRICE;run.selected=offers(run).findIndex(o=>o.price===MIN_PRICE);
+  assert.equal(inspectOre(save),false);assert.equal(buyOre(save),true);
+  assert.equal(inspectOre(save),false);
+});
+
+test('mineral identity survives refining, six hits, appraisal and archive reload', () => {
+  const save=freshSave(390);buyOre(save);
+  const source=mineralHeritage(save.run.ore);
+  beginRefining(save.run);
+  while(save.run.phase==='refine')advanceHeat(save.run,.025,(save.run.refining?.temperature ?? 90)<72);
+  for(let i=0;i<6;i++)strike(save.run,'belly');
+  assert.deepEqual(mineralHeritage(save.run.ore),source);
+  finishForge(save.run);save.run.fit=fitOptions(save.run)[0].id;appraise(save);
+  const loaded=migrateSave(JSON.parse(JSON.stringify(save)));
+  assert.deepEqual(mineralHeritage(loaded.collection[0].ore),source);
+  assert.equal(new Set(['river_gray','river_silver','river_banded','frost_quartz','frost_mica',
+    'coal_slag','coal_oxide','meteor_fusion','meteor_nickel','ochre_limonite','ochre_red','ochre_layer']
+    .map(material=>JSON.stringify(mineralHeritage({material,figure:.35,vein:60})))).size,12);
 });

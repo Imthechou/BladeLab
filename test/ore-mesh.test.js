@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { sectionContour } from '../ore-section.js';
 import { buildOreGlb } from '../scripts/ore-geometry.mjs';
 import { FAMILIES, ORE_VARIANTS, ORE_MATERIALS, oreModelId, oreMaterialOf, oreSignals, offers, freshSave } from '../forge.js';
 
@@ -65,7 +66,7 @@ test('twenty independent GLBs provide five watertight mineral families with thre
       const id = oreModelId({ family: family.id, variant });
       assert.equal(id, `ore_${family.id}_${variant}`);
       const data = readFileSync(new URL(`../assets/models/${id}.glb`, import.meta.url));
-      assert.ok(data.length < 12000, id + ': low-poly payload should remain tiny');
+      assert.ok(data.length < 28000, id + ': low-poly payload should remain tiny');
       validateGeneratedGeometry(data, Buffer.from(buildOreGlb(family.id, variant)), id);
       assert.equal(data.readUInt32LE(0), 0x46546c67, id + ': GLB magic');
       assert.equal(data.readUInt32LE(4), 2, id + ': glTF version');
@@ -75,10 +76,10 @@ test('twenty independent GLBs provide five watertight mineral families with thre
       const gltf = JSON.parse(data.subarray(20,20+jsonLen).toString());
       const positions = gltf.accessors[gltf.meshes[0].primitives[0].attributes.POSITION];
       const indices = gltf.accessors[gltf.meshes[0].primitives[0].indices];
-      assert.ok(positions.count >= 80 && positions.count < 240, id + ': expected ~162 vertices');
-      assert.ok(indices.count >= 240 && indices.count <= 1200, id + ': expected 320 low-poly triangles');
+      assert.ok(positions.count >= 600 && positions.count < 720, id + ': expected a compact bevel mesh');
+      assert.ok(indices.count === 3840, id + ': expected 1280 mobile triangles');
       assert.ok(positions.min[0] < -.4 && positions.max[0] > .4, id + ': cut through x center');
-      assert.ok(positions.min[1] < -.3 && positions.max[1] > .3, id + ': visible height');
+      assert.ok(positions.min[1] < -.22 && positions.max[1] > .25, id + ': visible height');
       assert.equal(data.readUInt32LE(20+jsonLen+4),0x004e4942,id+': BIN chunk');
       const hash = createHash('sha256').update(data).digest('hex');
       assert.ok(!hashes.has(hash), id + ': expected a genuinely distinct mesh');
@@ -116,4 +117,20 @@ test('twelve actual rock surface presets and five cues occur across offers and r
   assert.equal(materials.size,12);
   assert.equal(families.size,5);
   assert.equal(variations.size,4);
+});
+
+// Every generated specimen must produce a closed, non-collapsed real section.
+test('all twenty cut contours follow the actual shell and have finite area', () => {
+  for (const family of FAMILIES) for(let variant=0;variant<4;variant++) {
+    const mesh=parseGlb(Buffer.from(buildOreGlb(family.id,variant)));
+    for(const cut of [-.13,.015,.14]){
+      const contour=sectionContour(mesh.vertices,mesh.indices,cut);
+      assert.ok(contour.length>25,family.id+': closed section');
+      const area=Math.abs(contour.reduce((sum,a,i)=>{
+        const b=contour[(i+1)%contour.length];return sum+a[0]*b[1]-b[0]*a[1];
+      },0))/2;
+      assert.ok(area>.25 && area<2.1,family.id+': plausible section area');
+      assert.ok(contour.flat().every(Number.isFinite));
+    }
+  }
 });

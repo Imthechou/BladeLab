@@ -6,6 +6,9 @@ on:
     paths:
       - "forge.js"
       - "materials.js"
+      - "ore-section.js"
+      - "sound.js"
+      - "index.html"
       - "stage.js"
       - "app.js"
       - "styles.css"
@@ -47,10 +50,8 @@ jobs:
           exit 1
       - name: Mobile journey and WebGL smoke
         run: node scripts/qa-ore.mjs
-      - name: Twenty mineral models and twelve material visual review
+      - name: Twenty mineral models, twelve cuts and inherited blade surfaces
         run: node scripts/qa-ore-catalog.mjs
-      - name: Verify isolated GitHub Pages V4 on mobile
-        run: node scripts/qa-ore-preview.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

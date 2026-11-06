@@ -16,7 +16,7 @@ export function buildOreGlb(family, variant=0) {
   let points=[[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]].map(normalize);
   let faces=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
     [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
-  for(let level=0;level<2;level++){
+  for(let level=0;level<3;level++){
     const middle=new Map(); const midpoint=(a,b)=>{
       const key=a<b?a+':'+b:b+':'+a;
       if(middle.has(key))return middle.get(key);
@@ -27,51 +27,60 @@ export function buildOreGlb(family, variant=0) {
       next.push([a,ab,ca],[b,bc,ab],[c,ca,bc],[ab,bc,ca]);}
     faces=next;
   }
-  // Silhouettes first: river-worn oval, cleaved quartz, iron-slag block,
-  // compact pitted meteorite and stratified ferric nodule.
-  const dims=[[.75,.46,.55],[.60,.62,.55],[.76,.48,.59],[.66,.54,.59],[.78,.42,.61]][fi];
-  const squareness=[.91,.74,.65,.82,.64][fi];
+  // Five deliberately different geological masses. Broad planes are bevelled by
+  // the sampling mesh; shallow erosion belongs to the shape, not random spikes.
+  const dims=[[.84,.43,.58],[.61,.70,.51],[.77,.51,.61],[.67,.57,.61],[.86,.37,.63]][fi];
+  const powers=[1.0,.63,.56,.92,.68];
   const signedPow=(v,e)=>Math.sign(v)*Math.pow(Math.abs(v),e);
-  const capNormals=[[[.87,.20,.41],.83],[[-.58,.66,.29],.87],[[.13,-.92,.23],.81],[[-.72,-.27,-.48],.86]];
-  const phase=fi*1.63+variant*.59;
+  const cleaves=[
+    [[[.12,-1,.10],.83],[[.68,.30,-.63],.95]],
+    [[[1,.28,.18],.82],[[-1,.06,.3],.84],[[.17,1,.22],.87],[[.3,.28,-1],.85],[[.12,-1,.2],.83]],
+    [[[.95,.4,.15],.85],[[-.85,.4,-.3],.89],[[.1,1,.3],.81],[[.3,-1,.1],.82],[[-.1,.2,1],.86]],
+    [[[.6,-.75,-.2],.88],[[-.7,.3,-.5],.93]],
+    [[[.12,1,.08],.79],[[.05,-1,.15],.78],[[.9,.1,-.4],.94],[[-.8,.3,.2],.90]],
+  ][fi];
+  const phase=fi*1.73+variant*.34;
   points=points.map(p=>{
     const [u,v,w]=p;
-    const broad=Math.sin(u*4.5+v*2.2+phase)*Math.cos(w*3.8-v*.8-phase);
-    const shoulder=Math.sin(v*5.1-w*2.2+phase*1.4)*Math.cos(u*3.6+phase);
-    let radius=1+.025*broad+.018*shoulder;
-    if(fi===0){ // river: rounded water-worn ellipsoid and subtle shallow plane
-      radius+=.012*Math.sin(u*4.2+phase)*Math.cos(v*2.4);
-    }else if(fi===1){ // frost: broad prism shoulders with no exaggerated spikes
-      radius+=.039*Math.cos(Math.atan2(w,u)*5+phase)*(.35+.65*Math.abs(v));
-    }else if(fi===2){ // coal: broad broken ledges and pressure-squeezed silhouette
-      radius+=.044*Math.sin(u*3.5+w*2.8+phase)*Math.sin(v*2.4+phase);
-    }else if(fi===3){ // meteorite: shallow fusion-crust dimples, not a noise ball
-      const dent=[[.68,.28,.55],[-.22,.81,-.48],[-.77,-.39,.48]]
-        .reduce((sum,c)=>{const d=dot(p,normalize(c)); return sum+Math.exp(-(1-d)*48);},0);
-      radius-=.055*dent;
-    }else{ // ochre: compressed sedimentary nodule with long strata
-      radius+=.03*Math.sin(v*4.5+phase)*Math.cos(u*2.8+w*2.7);
+    const angle=Math.atan2(w,u);
+    const broad=Math.sin(u*3.4+v*1.7+phase)*Math.cos(w*3.1-v*.7-phase);
+    let q=p.map(n=>signedPow(n,powers[fi]));
+    let radius=1+.045*broad;
+    // Smooth clipping preserves large cleaved faces without a gem-like triangulation.
+    for(const [normal,limit] of cleaves){
+      const direction=dot(q,normalize(normal));
+      if(direction>limit) radius=Math.min(radius,limit/direction);
     }
-    if(variant===1)radius+=.027*Math.sin(u*7+phase); // low, broader stone
-    if(variant===2)radius+=.031*Math.cos(w*5+v*3+phase); // long ridge
-    if(variant===3)radius+=.028*Math.sin(u*4-w*6+phase); // slightly off-center
-    // A few believable clipped faces replace high-frequency random displacement.
-    for(const [normal,limit] of capNormals){
-      const direction=dot(p,normalize(normal));
-      if(direction > .54)radius=Math.min(radius,(limit+(fi===0?.04:0))/direction);
+    q=q.map(n=>n*radius);
+    if(fi===0){
+      q[1]*=1-.10*u; q[2]*=1+.07*u;
+      q[1]-=.035*Math.exp(-((u+.18)**2+(w-.35)**2)*15);
+    }else if(fi===1){
+      q[0]+=.18*Math.max(0,v); q[2]+=.08*v;
+      q[0]-=.045*Math.exp(-((v-.25)**2+(w-.4)**2)*19);
+    }else if(fi===2){
+      q[1]+=.11*u;
+      const fracture=Math.exp(-(((v+.10-u*.13)/.06)**2))*Math.max(0,w);
+      q[2]-=.065*fracture;
+      q[1]-=.045*Math.exp(-((u-.4)**2+(w-.2)**2)*16);
+    }else if(fi===3){
+      const centers=[[.62,.40,.68],[-.48,.68,.51],[.02,-.3,.96],[-.75,-.3,.5],[.7,-.3,-.4]];
+      const dent=centers.reduce((sum,c)=>sum+Math.exp(-(1-dot(p,normalize(c)))*55),0);
+      q=q.map(n=>n*(1-.095*dent));q[0]+=.05*v; q[1]+=.04*u;
+    }else{
+      const ledge=.027*Math.sin(v*19+phase)+.018*Math.sin(v*31+1.2);
+      q[0]*=1+ledge; q[2]*=1+ledge;
+      q[1]+=.08*u;
     }
-    const flat=variant===1?.92:variant===2?1.07:1;
-    const wide=variant===1?1.06:variant===2?.98:1;
-    let x=signedPow(u,squareness)*dims[0]*radius*wide;
-    let y=signedPow(v,squareness+.05)*dims[1]*radius*flat;
-    let z=signedPow(w,squareness+.04)*dims[2]*radius;
-    if(fi!==3 && y < -dims[1]*.74)y=-dims[1]*.74+(y+dims[1]*.74)*.42;
-    if(fi===0)y-=Math.max(0,-v-.5)*.025; // worn flat underside
-    if(fi===1){x+=Math.max(0,v)*.095;z+=u*.034;}
-    if(fi===2){y+=u*.05;z*=.96;}
-    if(fi===3)y+=u*.025;
-    if(fi===4){y+=u*.048;z*=1+.025*Math.sin(v*4+phase);}
-    if(variant===3){x+=y*.13;z+=u*.035;}
+    const erosion=(fi===0?.004:.009)*Math.sin(u*23+phase)*Math.sin(v*18-w*13)*Math.cos(w*21);
+    q=q.map(n=>n*(1+erosion));
+    if(q[1]<-.72)q[1]=-.72+(q[1]+.72)*.34;
+    const wide=variant===1?1.07:variant===2?.95:1;
+    const tall=variant===1?.90:variant===2?1.10:1;
+    let [x,y,z]=q.map((n,i)=>n*dims[i]);
+    x*=wide;y*=tall;
+    if(variant===2){y+=.045*Math.max(0,w);z*=.97;}
+    if(variant===3){x+=y*.18;z+=u*.045;y+=u*.025;}
     return [x,y,z];
   });
   const normals=points.map(()=>[0,0,0]);
@@ -91,7 +100,7 @@ export function buildOreGlb(family, variant=0) {
   points.forEach(v=>v.forEach((n,i)=>{min[i]=Math.min(n,min[i]);max[i]=Math.max(n,max[i]);}));
   const plen=position.byteLength, nlen=normal.byteLength, ilen=index.byteLength, binLen=plen+nlen+ilen;
   const gltf={
-    asset:{version:'2.0',generator:'BladeLab handcrafted compact mineral geometry'},
+    asset:{version:'2.0',generator:'BladeLab V5 bevelled geological specimens'},
     scene:0,scenes:[{nodes:[0]}],nodes:[{mesh:0,name:'ore_'+family+'_'+variant}],
     meshes:[{name:family+'_rock',primitives:[{attributes:{POSITION:0,NORMAL:1},indices:2,material:0,mode:4}]}],
     materials:[{name:'raw mineral substrate',pbrMetallicRoughness:{baseColorFactor:[.5,.5,.5,1],roughnessFactor:.88,metallicFactor:.1},doubleSided:true}],

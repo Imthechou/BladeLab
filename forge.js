@@ -1,6 +1,7 @@
 export const STORAGE_KEY = 'bladelab.forge.1';
 export const MIN_PRICE = 14;
 export const REFRESH_PRICE = 12;
+export const WINDOW_PRICE = 3;
 export const LOT_SIZE = 3;
 export const BATCHES = 3;
 export const MARK_WIDTH = 24;
@@ -33,22 +34,31 @@ export const RARE_ODDS = [5, 12, 22];
 // Independent low-poly shapes: one base plus three subtle, authored silhouette variants.
 export const ORE_VARIANTS = ['原型', '横卧', '棱脊', '偏心'];
 export const ORE_MATERIALS = Object.freeze([
-  { id: 'river_gray', family: 'river', name: '河磨灰岩', base: '#5f6769', vein: '#91999c', style: 0, roughness: .90, metalness: .12 },
-  { id: 'river_silver', family: 'river', name: '银砂铁石', base: '#596164', vein: '#9ca7ab', style: 1, roughness: .82, metalness: .27 },
-  { id: 'river_banded', family: 'river', name: '青灰层铁', base: '#536065', vein: '#879399', style: 2, roughness: .88, metalness: .14 },
-  { id: 'frost_quartz', family: 'frost', name: '霜白石英', base: '#737f83', vein: '#a2b7b6', style: 3, roughness: .73, metalness: .10 },
-  { id: 'frost_mica', family: 'frost', name: '青蓝云母', base: '#56676a', vein: '#9daead', style: 4, roughness: .79, metalness: .25 },
-  { id: 'coal_slag', family: 'coal', name: '黑熔渣', base: '#555153', vein: '#887568', style: 5, roughness: .96, metalness: .14 },
-  { id: 'coal_oxide', family: 'coal', name: '赤锈铁皮', base: '#67584e', vein: '#9b8166', style: 6, roughness: .94, metalness: .12 },
-  { id: 'meteor_fusion', family: 'meteor', name: '暗陨熔壳', base: '#545d64', vein: '#899198', style: 7, roughness: .86, metalness: .29 },
-  { id: 'meteor_nickel', family: 'meteor', name: '镍铁陨壳', base: '#657078', vein: '#a3afb0', style: 8, roughness: .78, metalness: .37 },
-  { id: 'ochre_limonite', family: 'ochre', name: '黄褐褐铁', base: '#73685a', vein: '#a89984', style: 9, roughness: .97, metalness: .08 },
-  { id: 'ochre_red', family: 'ochre', name: '赤铁结核', base: '#68564d', vein: '#a08a72', style: 10, roughness: .92, metalness: .16 },
-  { id: 'ochre_layer', family: 'ochre', name: '砂岩铁层', base: '#726d64', vein: '#aca294', style: 11, roughness: .95, metalness: .08 },
+  { id: 'river_gray', family: 'river', name: '河磨灰岩', base: '#687474', vein: '#bbc8c7', core: '#a9bfc7', steel: '#869eac', style: 0, roughness: .83, metalness: .10 },
+  { id: 'river_silver', family: 'river', name: '银砂铁石', base: '#536064', vein: '#d4d7c8', core: '#ced2bd', steel: '#aeb4a2', style: 1, roughness: .79, metalness: .25 },
+  { id: 'river_banded', family: 'river', name: '青灰层铁', base: '#4f626b', vein: '#9faeae', core: '#8aa9ba', steel: '#7190aa', style: 2, roughness: .85, metalness: .15 },
+  { id: 'frost_quartz', family: 'frost', name: '霜白石英', base: '#899d98', vein: '#cce7de', core: '#73c7b7', steel: '#87bcb6', style: 3, roughness: .65, metalness: .08 },
+  { id: 'frost_mica', family: 'frost', name: '青蓝云母', base: '#506f7a', vein: '#a2d4e1', core: '#70a8ca', steel: '#6d9ebc', style: 4, roughness: .72, metalness: .20 },
+  { id: 'coal_slag', family: 'coal', name: '黑熔渣', base: '#454342', vein: '#cb9666', core: '#d7945a', steel: '#af856c', style: 5, roughness: .91, metalness: .15 },
+  { id: 'coal_oxide', family: 'coal', name: '赤锈铁皮', base: '#6d493b', vein: '#e0a374', core: '#c77b52', steel: '#b37e70', style: 6, roughness: .89, metalness: .12 },
+  { id: 'meteor_fusion', family: 'meteor', name: '暗陨熔壳', base: '#424d55', vein: '#a5afc5', core: '#929bc3', steel: '#939bb9', style: 7, roughness: .78, metalness: .30 },
+  { id: 'meteor_nickel', family: 'meteor', name: '镍铁陨壳', base: '#576168', vein: '#cec4a5', core: '#c1b898', steel: '#b0aaa0', style: 8, roughness: .70, metalness: .39 },
+  { id: 'ochre_limonite', family: 'ochre', name: '黄褐褐铁', base: '#96734b', vein: '#dfbd81', core: '#c69b5b', steel: '#b3a078', style: 9, roughness: .92, metalness: .08 },
+  { id: 'ochre_red', family: 'ochre', name: '赤铁结核', base: '#815447', vein: '#d4a289', core: '#b97f68', steel: '#af9188', style: 10, roughness: .88, metalness: .16 },
+  { id: 'ochre_layer', family: 'ochre', name: '砂岩铁层', base: '#9a8969', vein: '#dfcaaa', core: '#d0b98c', steel: '#bdad8f', style: 11, roughness: .92, metalness: .08 },
 ]);
 export const oreMaterialOf = ore => ORE_MATERIALS.find(item => item.id === ore?.material) ||
   ORE_MATERIALS.find(item => item.family === ore?.family) || ORE_MATERIALS[0];
 export const oreModelId = ore => `ore_${FAMILIES.some(f => f.id === ore?.family) ? ore.family : 'river'}_${Math.max(0, Math.min(3, Math.floor(ore?.variant || 0)))}`;
+export const mineralHeritage = ore => {
+  const mineral = oreMaterialOf(ore);
+  return {
+    family: FAMILIES.findIndex(f => f.id === mineral.family), style: mineral.style,
+    seed: ore?.figure ?? .5, tone: mineral.steel, core: mineral.core,
+    trace: (ore?.vein ?? 52) / 100,
+    name: ['水纹层钢', '霜晶钢纹', '赤铜熔脉', '陨铁镍纹', '赭金叠层'][FAMILIES.findIndex(f => f.id === mineral.family)],
+  };
+};
 export const oreSignals = ore => {
   const vein = ore?.vein ?? Math.round((ore?.purity ?? 62) * .8);
   const flaw = ore?.flaw ?? Math.round(90 - (ore?.stability ?? 60));
@@ -109,7 +119,7 @@ export function freshSave(seed = Date.now()) {
 
 export function freshRun(seed) {
   return {
-    seed, phase: 'ore', batch: 0, selected: 0, ore: null, purity: 0, stability: 60, refining: null, refinement: null,
+    seed, phase: 'ore', batch: 0, selected: 0, inspections: {}, ore: null, purity: 0, stability: 60, refining: null, refinement: null,
     hits: 0, work: 0, cracks: 0, changedShape: false, model: 'blank', marks: {}, highlights: [],
     fit: null, refreshed: false, last: null, record: null,
     skin: { metal: 'raw', pattern: 'none', film: 'none', fx: 'none', levels: { metal: 1, pattern: 0, film: 0, fx: 0 }, seed: rngFor(seed, 'surface')() },
@@ -173,12 +183,24 @@ export function offers(run) {
     const material = choices[Math.floor(roll() * choices.length)].id;
     const variant = Math.floor(roll() * ORE_VARIANTS.length);
     return { id, family: family.id, material, variant, price, grade, clue, figure, purity, stability, tier,
-      vein, flaw, luster, density, crust, number: String(id + 1).padStart(2, '0') };
+      vein, flaw, luster, density, crust, window: Boolean(run.inspections?.[id]), number: String(id + 1).padStart(2, '0') };
   });
 }
 
 export const familyOf = (id) => FAMILIES.find(family => family.id === id) || FAMILIES[0];
 export const stabilityOf = value => value < 50 ? '偏脆' : value >= 70 ? '稳定' : '中等';
+
+// A small window reveals a real local sample, never a guaranteed quality label.
+// Refuse optional spending that would leave this stone unaffordable.
+export function inspectOre(save) {
+  const run = save.run;
+  if (run.phase !== 'ore') return false;
+  const ore = offers(run)[run.selected];
+  if (!ore || ore.window || save.credits < ore.price + WINDOW_PRICE) return false;
+  save.credits -= WINDOW_PRICE;
+  (run.inspections ??= {})[ore.id] = true;
+  return true;
+}
 
 export function modelCandidates(run) {
   const family = FAMILIES.findIndex(item => item.id === run.ore?.family);
