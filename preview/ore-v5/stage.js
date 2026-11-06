@@ -1,6 +1,6 @@
-import { sectionContour } from './ore-section.js?v=7';
-import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=7';
-import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, HEAT, modelCandidates } from './forge.js?v=7';
+import { sectionContour } from './ore-section.js?v=8';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=8';
+import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, HEAT, modelCandidates } from './forge.js?v=8';
 import { KNIFE_IDS, regionAt } from './regions.js?v=2';
 
 const T = globalThis.THREE;
@@ -789,9 +789,9 @@ export class ForgeStage {
     this.oreUniforms.oreSide.value=sideCheck ? 1 : 0;
     this.oreUniforms.oreLamp.value=lampCheck ? 1 : 0;
     this.oreUniforms.oreScan.value=scan;
-    this.scene.environmentIntensity=sideCheck ? .20 : lampCheck ? .12 : 1;
-    this.ambient.intensity=sideCheck ? .20 : lampCheck ? .10 : .93;
-    this.rimLight.intensity=sideCheck ? .28 : lampCheck ? .16 : 1.1;
+    this.scene.environmentIntensity=sideCheck ? .20 : lampCheck ? .40 : 1;
+    this.ambient.intensity=sideCheck ? .20 : lampCheck ? .34 : .93;
+    this.rimLight.intensity=sideCheck ? .28 : lampCheck ? .40 : 1.1;
     this.inspectLight.intensity=sideCheck ? 4.8 : 0;
     this.inspectLight.position.x=lerp(-4.2,-2.6,scan);
     this.lampLight.intensity=lampCheck ? 34 : 0;
@@ -802,7 +802,7 @@ export class ForgeStage {
     this.sweep.intensity = mode === 'reveal' ? revealFlash * 2.1 : inspect ? (mode === 'appraise' ? .45 + 1.1 * Math.exp(-elapsed / 820) : .58) : 0;
     this.sweep.position.x = mode === 'appraise' ? lerp(-2.8, 2.6, clamp(elapsed / 1500, 0, 1)) : .8;
     this.key.color.set(stone && mode !== 'refine' ? 0xe8efff : 0xffcfad);
-    this.key.intensity = mode === 'ore' ? (this.inspection==='side' ? .28 : this.inspection==='lamp' ? .12 : 2.65) : mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.45 + revealFlash * .65 : 2.9;
+    this.key.intensity = mode === 'ore' ? (this.inspection==='side' ? .28 : this.inspection==='lamp' ? .42 : 2.65) : mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.45 + revealFlash * .65 : 2.9;
     const blow = this.blow;
     this.trail.visible = false;
     if (blow) {

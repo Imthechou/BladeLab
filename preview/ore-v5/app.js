@@ -2,9 +2,9 @@ import {
   STORAGE_KEY, WINDOW_PRICE, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, RARE_ODDS, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
-} from './forge.js?v=7';
-import { ForgeStage } from './stage.js?v=7';
-import { ForgeSound } from './sound.js?v=7';
+} from './forge.js?v=8';
+import { ForgeStage } from './stage.js?v=8';
+import { ForgeSound } from './sound.js?v=8';
 import { createQaSession } from './qa.js?v=2.1';
 
 const get = id => document.getElementById(id);
