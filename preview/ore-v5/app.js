@@ -1,11 +1,12 @@
 import {
   STORAGE_KEY, WINDOW_PRICE, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, RARE_ODDS, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
-  freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, fractureRisk, strike, finishForge,
+  freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
+  REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
-} from './forge.js?v=9';
-import { ForgeStage } from './stage.js?v=9';
-import { ForgeSound } from './sound.js?v=9';
-import { createQaSession } from './qa.js?v=2.1';
+} from './forge.js?v=10';
+import { ForgeStage } from './stage.js?v=10';
+import { ForgeSound } from './sound.js?v=10';
+import { createQaSession } from './qa.js?v=10';
 
 const get = id => document.getElementById(id);
 const canvas = get('scene');
@@ -20,6 +21,7 @@ const stepNames = ['选料', '精炼', '锻打', '装配', '鉴定'];
 const stationNames = ['原石检视台', '精炼炉口', '锻造铁砧', '装配工作台', '成刀展台'];
 const roman = ['', ' I', ' II', ' III'];
 const fmt = p => (p * 100).toFixed(p === 0 ? 0 : 1) + '%';
+const signed = n => (n < 0 ? '−' : n > 0 ? '+' : '') + Math.abs(n);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 let save = restore();
 let stage;
@@ -78,11 +80,13 @@ function render() {
   const run = save.run;
   const { phase } = run;
   qa?.phase(phase);
-  const navPhase = phase === 'reveal' ? 'ore' : phase === 'broken' ? 'forge' : phase;
+  const failedRefining = run.last?.type === 'refine-fail';
+  const navPhase = phase === 'reveal' ? 'ore' : phase === 'broken' ? failedRefining ? 'refine' : 'forge' : phase;
   const idx = PHASES.indexOf(navPhase);
   const ore = phase === 'ore' ? offers(run)[run.selected] : run.ore;
   const fit = FITS.find(item => item.id === run.fit);
   stageBox.dataset.mode = phase;
+  if (phase !== 'refine') stageBox.dataset.danger = 'false';
   get('ore-nav').hidden = phase !== 'ore';
   get('ore-position').textContent = '第 ' + (run.batch + 1) + ' 批 · ' + (run.selected + 1) + ' / ' + LOT_SIZE;
   get('steps').innerHTML = stepNames.map((label, n) => `<div class="step ${n === idx ? 'current' : n < idx ? 'past' : ''}" ${n === idx ? 'aria-current="step"' : ''}><i>0${n + 1}</i>${label}</div>`).join('');
@@ -92,9 +96,9 @@ function render() {
   const status = { ore: '原石在台', reveal: '已开料', refine: '炉温实时', forge: '可自由落锤', fit: '试装预览', appraise: '成品已入藏', broken: '炉次结束' };
   get('stage-state').textContent = webglError ? '3D 暂不可用' : status[phase];
   const hints = {
-    ore: '拖动转石', reveal: '同源矿相 · 拖动检视', refine: '按住鼓风 · 松手散热',
+    ore: '拖动转石', reveal: '同源矿相 · 拖动检视', refine: '松手仍有余热 · 可提前浇注',
     forge: matchMedia('(pointer: coarse)').matches ? '轻点刀身 · 落点影响出纹' : '直接轻点刀身 · 空格落锤', fit: '拖动转刀，比较装配',
-    appraise: '拖动检视成刀', broken: '保留本次锻打记录',
+    appraise: '拖动检视成刀', broken: failedRefining ? '本炉钢料已报废' : '保留本次锻打记录',
   };
   get('stage-hint').textContent = hints[phase];
   if (phase === 'ore') {
@@ -129,20 +133,25 @@ function render() {
       actions.innerHTML = button('to-refine', '送去精炼');
     }
   } else if (phase === 'refine') {
-    title('02 / HEAT CONTROL', '控住火候', '把原石熔化，再让熔球尽量留在绿区。温度升得太快就松手。');
+    title('02 / HEAT CONTROL', '控住火候', '追随绿区排渣，满意就浇注。持续过热或凝固会废炉。');
     readout.innerHTML = `<div class="info-block temperature">
-      <div class="info-line"><strong id="heat-step">原石升温</strong><b class="readout-number" id="heat-number">35°</b></div>
-      <div class="thermo" role="progressbar" aria-label="炉温" aria-valuemin="0" aria-valuemax="100" aria-valuenow="35" id="thermo"><i class="thermo-fill" id="heat-fill"></i><i class="thermo-range"></i><i class="thermo-danger"></i></div>
-      <div class="info-line"><small>稳温累计</small><b class="readout-number" id="heat-stable">0.0 / 3.0 秒</b></div>
-      <div class="risk-bar heat-progress"><span id="heat-progress"></span></div>
+      <div class="info-line"><strong id="heat-step">原石升温</strong><span class="heat-clock" id="heat-clock">待点火</span><b class="readout-number" id="heat-number">35°</b></div>
+      <div class="thermo" role="progressbar" aria-label="炉温" aria-valuemin="0" aria-valuemax="100" aria-valuenow="35" id="thermo"><i class="thermo-fill" id="heat-fill"></i><i class="thermo-range" id="heat-range"></i><i class="thermo-danger"></i><i class="thermo-needle" id="heat-needle"></i></div>
+      <div class="info-line"><small>排渣区 <b id="heat-target"></b></small><small id="heat-draft">按住点火</small></div>
+      <div class="info-line"><strong id="heat-rank">尚未成坯</strong><b class="readout-number" id="heat-quality">0 / 100</b></div>
+      <div class="heat-progress" role="progressbar" aria-label="精炼质量" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="heat-quality-meter"><span id="heat-progress"></span><i style="left:22%"></i><i style="left:65%"></i><i style="left:86%"></i></div>
+      <div class="heat-thresholds"><small>22 成坯</small><small>65 良好</small><small>86 极佳</small></div>
+      <div class="info-line"><small>炉料损伤</small><b class="heat-damage-value" id="heat-damage-value">0%</b></div>
+      <div class="risk-bar heat-damage"><span id="heat-damage"></span></div>
       <small id="heat-note">先把原石加热到 65°</small>
     </div>`;
-    actions.innerHTML = button('heat', '按住鼓风 · 松手散热', { id: 'heat-button' });
+    actions.innerHTML = button('heat', '按住鼓风', { id: 'heat-button' }) +
+      button('pour-refine', '排渣中…', { kind: 'secondary', id: 'pour-button', off: true });
     drawHeat();
   } else if (phase === 'forge') {
     const risk = fractureRisk(run);
     title('03 / THE ANVIL', '下一锤，怎么打？', run.hits ? '在刀腹找纹，在刃侧找光。喜欢眼前这把刀，就可以收锤。' : '直接点刀胚。刀腹、刃侧和刀尖，能敲出不同方向的变化。');
-    readout.innerHTML = `<div class="info-block"><div class="risk-line"><small>下一锤断率</small><strong class="risk-value ${risk >= .075 ? 'alert' : ''}" id="risk">${fmt(risk)}</strong></div><div class="risk-bar"><span style="width:${risk / .9 * 100}%"></span></div><div class="info-line"><small>${MODELS[run.model]} · 纯净 ${run.purity} · ${stabilityOf(run.stability)}</small><b class="readout-number" id="hit-count">${run.hits} 锤</b></div></div>${lookChips(run)}`;
+    readout.innerHTML = `<div class="info-block"><div class="risk-line"><small>下一锤断率</small><strong class="risk-value ${risk >= .075 ? 'alert' : ''}" id="risk">${fmt(risk)}</strong></div><div class="risk-bar"><span style="width:${risk / .9 * 100}%"></span></div><div class="info-line"><small>${MODELS[run.model]} · 纯净 ${run.purity} · ${stabilityOf(run.stability)}</small><b class="readout-number" id="hit-count">${run.hits} 锤</b></div></div>${run.refinement?.quality != null ? `<div class="refinement-result ${run.refinement.result}"><b>${REFINEMENT_RESULTS[run.refinement.result].label} · ${run.refinement.quality}</b><span>纯净 ${signed(run.purity - ore.purity)} · 稳定 ${signed(run.stability - ore.stability)}</span></div>` : ''}${lookChips(run)}`;
     actions.innerHTML = button('finish', '收锤 · 保住这一把', { off: run.hits < 6 }) +
       `<span class="action-note">${run.hits < 6 ? '第 6 锤后可收锤 · 前六锤稳定' : '收锤后直接进入装配'}</span>`;
   } else if (phase === 'fit') {
@@ -153,12 +162,18 @@ function render() {
   } else if (phase === 'appraise') {
     const record = run.record;
     title('05 / THE REVEAL', record.name, '第 ' + String(record.id).padStart(2, '0') + ' 号藏刀 · 已收入本地藏刀记录。');
-    readout.innerHTML = info('成刀品质', `<span class="result-grade">${esc(record.grade)}</span> · ${esc(record.score)} 分`, '', '+' + record.credit + ' CR') +
+    readout.innerHTML = info('成刀品质', `<span class="result-grade">${esc(record.grade)}</span> · ${esc(record.score)} 分`, record.refinement?.quality != null ? REFINEMENT_RESULTS[record.refinement.result].label + ' · 精炼质量 ' + record.refinement.quality : '', '+' + record.credit + ' CR') +
       `<div class="stat-list">${record.stats.map((n, i) => `<div class="stat"><span>${STAT_NAMES[i]}</span><span class="stat-track"><i style="width:${Number(n)}%"></i></span><b>${Number(n)}</b></div>`).join('')}</div>`;
     actions.innerHTML = button('restart', '再开一炉');
   } else {
-    title('03 / FRACTURE', '这一炉，断了', '锤头落下，裂痕贯穿了刀身。换一块矿，试一条不同的路。');
-    readout.innerHTML = info('断裂记录', '第 ' + run.hits + ' 锤 · ' + fmt(run.last.risk), '本炉开料已消耗 ' + ore.price + ' 信用点。');
+    if (failedRefining) {
+      title('02 / FURNACE LOST', '精炼失败', REFINEMENT_FAILURES[run.refinement.reason]);
+      readout.innerHTML = info('炉次报废', '未生成成刀', '本炉选料已消耗 ' + (ore.price + Object.keys(run.inspections || {}).length * WINDOW_PRICE) + ' CR。') +
+        info('下次控温', { burnt: '提前松手，留意余热', frozen: '及时鼓风，别让熔钢降到 55°', unmelted: '先按住鼓风，把原石熔化', slag: '跟随绿区排渣，质量至少达到 22' }[run.refinement.reason]);
+    } else {
+      title('03 / FRACTURE', '这一炉，断了', '锤头落下，裂痕贯穿了刀身。换一块矿，试一条不同的路。');
+      readout.innerHTML = info('断裂记录', '第 ' + run.hits + ' 锤 · ' + fmt(run.last.risk), '本炉开料已消耗 ' + ore.price + ' 信用点。');
+    }
     actions.innerHTML = button('restart', '再开一炉');
   }
   stage?.sync(run, ore, fit);
@@ -207,7 +222,7 @@ function renderTray(run, fit) {
   } else {
     const note = {
       reveal: ['矿石已切开', '工艺倾向来自这块矿。'],
-      refine: ['炉温提示', '绿区累计时间，过热则减少成坯品质。'],
+      refine: ['火候与取舍', '追随窄绿区排渣；提前浇注保料，继续控温争取更高质量。'],
       forge: [run.last ? (run.last.fusion || run.last.label) : '铁砧已就位', run.last ? '最近一锤 · ' + String(run.hits).padStart(2, '0') : '刀腹偏纹 · 刃侧偏膜 · 刀尖偏特效'],
       appraise: ['本地藏刀记录', '这一炉的刀面和装配已留档。'],
       broken: ['钢料损失', '连续失手后，最低价工坊矿仍可用。'],
@@ -229,21 +244,40 @@ function drawHeat() {
   const thermo = get('thermo');
   if (!heat || !thermo) return;
   const temperature = Math.round(heat.temperature);
-  const green = heat.step === 'molten' && temperature >= HEAT.lower && temperature <= HEAT.upper;
-  const danger = heat.step === 'molten' && temperature >= HEAT.danger;
+  const band = heatBand(heat);
+  const green = heat.step === 'molten' && heat.temperature >= band.lower && heat.temperature <= band.upper;
+  const danger = heat.step === 'molten' && (heat.temperature >= 82 || heat.temperature <= 58 || heat.damage >= 65);
+  const rank = refinementRank(heat.quality);
+  const outcome = REFINEMENT_RESULTS[rank];
   get('heat-step').textContent = { ore: '原石升温', molten: '熔球稳温', cast: '浇注成坯' }[heat.step];
   get('heat-number').textContent = temperature + '°';
+  get('heat-clock').textContent = heat.step === 'cast' ? '浇注中' : !heatInput && !heat.elapsed ? '待点火' : Math.max(0, (heat.step === 'ore' ? HEAT.preheat : HEAT.window) - heat.elapsed).toFixed(1) + ' s';
   get('heat-fill').style.width = temperature + '%';
-  get('heat-stable').textContent = heat.stable.toFixed(1) + ' / 3.0 秒';
-  get('heat-progress').style.width = Math.min(100, heat.stable / HEAT.good * 100) + '%';
-  get('heat-note').textContent = heat.step === 'ore' ? '先把原石加热到 65°' : heat.step === 'cast' ? '熔钢入模，稍候冷却' :
-    danger ? '过热 · 松手散热' : (green ? '绿区内正在排渣' : '稳在 65–78°') + ' · 剩 ' + Math.max(0, HEAT.window - heat.elapsed).toFixed(1) + ' 秒';
+  get('heat-needle').style.left = temperature + '%';
+  get('heat-range').style.left = band.lower + '%';
+  get('heat-range').style.width = (band.upper - band.lower) + '%';
+  get('heat-target').textContent = band.lower.toFixed(0) + '–' + band.upper.toFixed(0) + '°';
+  thermo.dataset.lower = band.lower.toFixed(2);
+  thermo.dataset.upper = band.upper.toFixed(2);
+  get('heat-draft').textContent = !heatInput && !heat.elapsed ? '按住点火' : heat.draft > .5 ? '余热 ↑' : '散热 ↓';
+  get('heat-rank').textContent = rank === 'failed' ? '尚未成坯' : outcome.label;
+  get('heat-quality').textContent = Math.floor(heat.quality) + ' / 100';
+  get('heat-quality-meter').setAttribute('aria-valuenow', Math.floor(heat.quality));
+  get('heat-progress').style.width = heat.quality + '%';
+  get('heat-damage').style.width = heat.damage + '%';
+  get('heat-damage-value').textContent = Math.round(heat.damage) + '%';
+  get('heat-note').textContent = heat.step === 'ore' ? '加热到 65° 熔化 · 松手仍有余热' : heat.step === 'cast' ? outcome.label + ' · 熔钢入模' :
+    heat.temperature >= 82 ? '过热烧损 · 立即松手' : heat.temperature <= 58 ? '即将凝固 · 立即鼓风' :
+      green ? '绿区排渣中 · 可择机浇注' : '追随绿区 · 提前松手留余热';
   thermo.setAttribute('aria-valuenow', temperature);
   stageBox.dataset.heat = heat.step;
   stageBox.dataset.danger = String(danger);
   const button = get('heat-button');
   button.disabled = heat.step === 'cast';
-  button.classList.toggle('heating', Boolean(heatInput?.blowing));
+  button.classList.toggle('heating', heat.step !== 'cast' && Boolean(heatInput?.blowing));
+  const pour = get('pour-button');
+  pour.disabled = heat.step !== 'molten' || heat.elapsed < HEAT.minimum || heat.quality < HEAT.minQuality;
+  pour.textContent = heat.step === 'cast' ? '浇注中…' : pour.disabled ? '排渣后浇注' : '浇注 · ' + ({ excellent: '极佳', good: '良好', fair: '普通', poor: '勉强' })[rank];
   stage?.setHeat(heat);
   if (heatInput) {
     if (green && !heatInput.green && performance.now() - (heatInput.lastCue ?? 0) > 450) {
@@ -267,14 +301,14 @@ function heatFrame(now) {
       advanceHeat(run, frame, heatInput.blowing);
       remaining -= frame;
     }
-    if (run.phase === 'forge') {
+    if (run.phase !== 'refine') {
       heatInput = null;
       persist();
       render();
-      const label = { good: '精炼良好', fair: '精炼合格', failed: '火候失控' }[run.refinement.result];
+      const label = REFINEMENT_RESULTS[run.refinement.result].label;
       const difference = run.purity - run.ore.purity;
-      const result = label + ' · 纯净 ' + (difference < 0 ? '−' : '+') + Math.abs(difference);
-      sound.play(run.refinement.result === 'failed' ? 'scar' : 'cast');
+      const result = label + (run.phase === 'broken' ? ' · 炉次报废' : ' · 纯净 ' + signed(difference));
+      sound.play(run.phase === 'broken' ? 'break' : 'cast');
       say(result, run.refinement.result === 'failed' ? 'scar' : 'surge');
       return;
     }
@@ -292,7 +326,7 @@ function heatFrame(now) {
 }
 
 function startHeat(blowing) {
-  if (save.run.phase !== 'refine' || save.run.refining.step === 'cast' && blowing) return;
+  if (save.run.phase !== 'refine' || !save.run.refining || save.run.refining.step === 'cast' && blowing) return;
   if (!heatInput) {
     heatInput = { now: performance.now(), saved: 0, blowing };
     requestAnimationFrame(heatFrame);
@@ -417,6 +451,10 @@ document.addEventListener('click', event => {
     }, 1050);
   } else if (action === 'to-refine' && !revealPending && beginRefining(run)) {
     sound.prepare();
+  } else if (action === 'pour-refine' && pourRefining(run)) {
+    releaseHeat();
+    startHeat(false);
+    sound.play('cast');
   } else if (action === 'finish') {
     closeAnvil();
     return;

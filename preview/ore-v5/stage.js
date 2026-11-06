@@ -1,6 +1,6 @@
-import { sectionContour } from './ore-section.js?v=9';
-import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=9';
-import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, HEAT, modelCandidates } from './forge.js?v=9';
+import { sectionContour } from './ore-section.js?v=10';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=10';
+import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=10';
 import { KNIFE_IDS, regionAt } from './regions.js?v=2';
 
 const T = globalThis.THREE;
@@ -387,7 +387,7 @@ export class ForgeStage {
   setHeat(heat) {
     this.heat = heat.temperature / 100;
     this.meltUniforms.meltHeat.value = this.heat;
-    this.meltUniforms.meltClean.value = Math.min(1, heat.stable / HEAT.good);
+    this.meltUniforms.meltClean.value = heat.quality / 100;
     this.oreUniforms.oreHeat.value = heat.step === 'ore' ? this.heat : 0;
   }
 
@@ -454,7 +454,13 @@ export class ForgeStage {
     }
     if (this.mode !== 'refine') this.oreUniforms.oreHeat.value = 0;
     this.prepareRun(run);
-    this.want = this.mode === 'reveal' && this.previewSteel ? 'straight' : stone ? oreModelId(ore) : run.refining?.step === 'molten' ? 'molten' : run.model;
+    const failedRefining = run.last?.type === 'refine-fail';
+    if (failedRefining) {
+      this.meltUniforms.meltHeat.value = .08;
+      this.meltUniforms.meltClean.value = 0;
+    }
+    this.want = failedRefining ? run.refinement.reason === 'unmelted' ? oreModelId(ore) : 'molten' :
+      this.mode === 'reveal' && this.previewSteel ? 'straight' : stone ? oreModelId(ore) : run.refining?.step === 'molten' ? 'molten' : run.model;
     if (this.cache.has(this.want)) this.show(this.want);
     else {
       const id = this.want;
@@ -495,7 +501,7 @@ export class ForgeStage {
       this.mesh.scale.set(x + variation * .055, y - variation * .04, z + variation * .04);
     }
     if (isOreModel(id) && this.mode === 'reveal' && !this.orePieces) this.cutOre();
-    if (!isOreModel(id) && this.mode === 'broken' && !this.blow && !this.pieces) {
+    if (!isOreModel(id) && this.mode === 'broken' && this.run?.last?.type !== 'refine-fail' && !this.blow && !this.pieces) {
       const position = this.run?.last?.mark;
       const bounds = this.mesh.geometry.boundingBox;
       this.split(new T.Vector3(position && bounds ? lerp(bounds.min.x, bounds.max.x, position.u) : 0, 0, 0));
@@ -735,6 +741,7 @@ export class ForgeStage {
     const inspect = ['fit', 'appraise'].includes(mode);
     const stone = isOreModel(this.shown);
     const melt = this.shown === 'molten';
+    const failedRefining = mode === 'broken' && this.run?.last?.type === 'refine-fail';
     const working = mode === 'forge' || mode === 'broken' || mode === 'refine';
     if (working && delta > 0 && delta < 160) {
       this.slowFrames = delta > 25 ? this.slowFrames + 1 : Math.max(0, this.slowFrames - 2);
@@ -756,9 +763,9 @@ export class ForgeStage {
     this.content.rotation.set(stone || melt ? .18 + this.turnX + tap : .055 + this.turnX, stone || melt ? stoneTurn + this.turnY : -.10 + this.turnY + startTurn, angle + shake);
     this.content.position.set(stone || melt ? 0 : -.03, (stone || melt ? .04 : working ? .12 : .21) - compression, .10);
     if (melt) {
-      this.meltUniforms.meltClock.value = this.reduceMotion ? 0 : t;
+      this.meltUniforms.meltClock.value = this.reduceMotion || failedRefining ? 0 : t;
       const reveal = 1 - .20 * Math.exp(-(now - this.swapAt) / 155);
-      const breathe = this.reduceMotion ? 1 : 1 + Math.sin(t * 4) * .018;
+      const breathe = this.reduceMotion || failedRefining ? 1 : 1 + Math.sin(t * 4) * .018;
       this.mesh.scale.set(1.45 * reveal / breathe, 1.45 * reveal * breathe, 1.45 * reveal);
     }
     this.oreUniforms.oreReveal.value = mode === 'reveal' ? clamp((elapsed - 130) / 590, 0, 1) : 0;
@@ -769,8 +776,8 @@ export class ForgeStage {
       uniforms.fPulse.value = Math.min(1.3, impulse);
       uniforms.fWave.value = this.lastImpact?.wave ? 1 - clamp(strikeAge / 270, 0, 1) : 0;
     }
-    this.anvil.visible = working && mode !== 'refine';
-    this.crucible.visible = mode === 'refine';
+    this.anvil.visible = working && mode !== 'refine' && !failedRefining;
+    this.crucible.visible = mode === 'refine' || failedRefining;
     this.crucible.position.set(0, narrow ? -.83 : -.73, -.12);
     this.anvil.position.set(.10, (narrow ? -.91 : -.78) - compression * .35, -.42);
     this.anvil.rotation.z = .11;

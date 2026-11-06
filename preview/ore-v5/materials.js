@@ -1,4 +1,4 @@
-import { MARK_WIDTH, MARK_HEIGHT, oreMaterialOf, mineralHeritage } from './forge.js?v=9';
+import { MARK_WIDTH, MARK_HEIGHT, oreMaterialOf, mineralHeritage } from './forge.js?v=10';
 
 const T = globalThis.THREE;
 const metalId = { raw: 0, silver: 1, pearl: 2, gunmetal: 3, obsidian: 4 };
@@ -18,6 +18,7 @@ export function surfaceUniforms() {
     fHeat: { value: 0 },
     fMarks: { value: marks },
     fPurity: { value: .65 },
+    fRefine: { value: .5 },
     fOreTone: { value: new T.Color('#879cab') },
     fOreTrace: { value: .5 },
     fOreStyle: { value: 0 },
@@ -41,6 +42,7 @@ export function setSurface(uniforms, run, fit) {
   uniforms.fLevels.value.set(skin.levels.metal, skin.levels.pattern, skin.levels.film, skin.levels.fx);
   uniforms.fSeed.value = skin.seed;
   uniforms.fPurity.value = (run.purity || run.ore?.purity || 65) / 100;
+  uniforms.fRefine.value = (run.refinement?.quality ?? 50) / 100;
   const sourceMineral = oreMaterialOf(run.ore);
   const heritage = mineralHeritage(run.ore);
   uniforms.fOreTone.value.set(heritage.tone);
@@ -83,7 +85,7 @@ vForgeNormal = normalize(normalMatrix * normal);
 
 const fragmentHead = `
 uniform vec4 fCodes, fLevels;
-uniform float fClock, fSeed, fHeat, fPurity, fPulse, fWave, fGripStyle, fFitted, fRaw, fOreTrace, fOreStyle, fOreFamily, fOreSeed, fOreClarity;
+uniform float fClock, fSeed, fHeat, fPurity, fRefine, fPulse, fWave, fGripStyle, fFitted, fRaw, fOreTrace, fOreStyle, fOreFamily, fOreSeed, fOreClarity;
 uniform sampler2D fMarks;
 uniform vec3 fGrip, fGuard, fHit, fOreTone;
 varying vec4 vForge;
@@ -192,8 +194,8 @@ else if (fCodes.x < 2.5 && fCodes.x > 1.5) { steel = vec3(.51,.64,.67); forgeRou
 else if (fCodes.x < 3.5 && fCodes.x > 2.5) { steel = vec3(.25,.29,.36); forgeRough = .28; }
 else if (fCodes.x > 3.5) { steel = vec3(.21,.19,.23); forgeRough = .255; }
 steel *= .92 + brush*.038 + coarse*.13;
-forgeRough += brush*.025 + (coarse-.5)*.14 - refine;
-float slag = smoothstep(.62,.91,forgeNoise(fp*vec2(49.,91.)+bend));
+forgeRough += brush*.025 + (coarse-.5)*.14 - refine + (.5-fRefine)*.20;
+float slag = smoothstep(.44+fRefine*.36,.94,forgeNoise(fp*vec2(49.,91.)+bend));
 steel *= 1.-(1.-fPurity)*slag*.42;
 forgeRough += (1.-fPurity)*slag*.14;
 // A durable mineral fingerprint remains underneath every forged finish.
@@ -310,7 +312,7 @@ export function makeBladeMaterial(original, uniforms, raw) {
     envMapIntensity: 1.22,
   });
   material.userData.forge = uniforms;
-  material.customProgramCacheKey = () => 'blade-lab-mineral-chromatic-heritage-7';
+  material.customProgramCacheKey = () => 'blade-lab-refined-mineral-heritage-8';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = vertexHead + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + vertexBody);
