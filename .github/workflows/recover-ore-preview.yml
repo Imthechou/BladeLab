@@ -1,0 +1,26 @@
+name: Recover ore preview deployment
+on:
+  push:
+    branches: [gh-pages]
+    paths: ['.github/workflows/recover-ore-preview.yml']
+permissions:
+  pages: write
+jobs:
+  cancel-expired-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Cancel only the expired ore preview deployment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl --fail --silent --show-error --retry 2 --retry-delay 2 -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            https://api.github.com/repos/Imthechou/BladeLab/pages/deployments/3884d01f8da40250e94763583b5e7c8a71b802a6/cancel
+          curl --fail --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            https://api.github.com/repos/Imthechou/BladeLab/pages/deployments/3884d01f8da40250e94763583b5e7c8a71b802a6
