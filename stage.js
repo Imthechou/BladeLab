@@ -1,6 +1,6 @@
-import { sectionContour } from './ore-section.js?v=5';
-import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=5';
-import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreModelId, familyOf, HEAT, modelCandidates } from './forge.js?v=5';
+import { sectionContour } from './ore-section.js?v=6';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=6';
+import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreModelId, familyOf, HEAT, modelCandidates } from './forge.js?v=6';
 import { KNIFE_IDS, regionAt } from './regions.js?v=2';
 
 const T = globalThis.THREE;
@@ -18,6 +18,17 @@ const familyOrder = FAMILIES.map(f => f.id);
 const isOreModel = id => typeof id === 'string' && /^ore_(river|frost|coal|meteor|ochre)_[0-3]$/.test(id);
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
 const lerp = (a, b, t) => a + (b - a) * t;
+
+function setOreOptics(uniforms,ore) {
+  const rock=oreMaterialOf(ore),optics=oreOptics(ore);
+  uniforms.oreCoreColor.value.set(optics.core);
+  uniforms.oreTint.value.set(optics.core);
+  uniforms.oreHostVein.value.set(rock.vein);
+  uniforms.oreVeinColor.value.set(optics.core).lerp(new T.Color('#e2e8e4'),.30);
+  uniforms.oreExposure.value=optics.exposure;
+  uniforms.oreClarity.value=optics.clarity;
+  return optics;
+}
 
 function coordinates(geometry, id) {
   geometry.computeBoundingBox();
@@ -254,7 +265,8 @@ export class ForgeStage {
       oreDensity: { value: .5 }, oreCrust: { value: .5 }, oreMaterial: { value: 0 },
       oreRoughness: { value: .9 }, oreMetalness: { value: .1 },
       oreBaseColor: { value: new T.Color('#565b5c') }, oreVeinColor: { value: new T.Color('#9da9aa') },
-      oreCoreColor: { value: new T.Color('#a6bfc5') }, oreWindow: { value: 0 }, oreLamp: { value: 0 },
+      oreCoreColor: { value: new T.Color('#a6bfc5') }, oreHostVein: { value: new T.Color('#bbc8c7') },
+      oreExposure: { value: .55 }, oreClarity: { value: .5 }, oreWindow: { value: 0 }, oreLamp: { value: 0 },
     };
     this.meltUniforms = { meltClock: { value: 0 }, meltHeat: { value: .65 }, meltClean: { value: 0 }, meltTint: { value: new T.Color() }, meltSeed: { value: .5 } };
     this.inspection = 'natural';
@@ -303,7 +315,7 @@ export class ForgeStage {
   }
 
   oreThumbnail(ore) {
-    const key = [ore.id,ore.figure,ore.material,ore.variant,ore.window].join('|');
+    const key = [ore.id,ore.figure,ore.material,ore.variant,ore.window,ore.tint,ore.exposure,ore.clarity].join('|');
     if(this.thumbnailCache.has(key))return this.thumbnailCache.get(key);
     const pending=this.load(oreModelId(ore)).then(({mesh})=>{
       const u=T.UniformsUtils.clone(this.oreUniforms), rock=oreMaterialOf(ore);
@@ -311,7 +323,7 @@ export class ForgeStage {
         oreFamily:familyOrder.indexOf(ore.family),oreMaterial:rock.style,oreRoughness:rock.roughness,
         oreMetalness:rock.metalness,oreWindow:ore.window?1:0,oreVein:ore.vein/100,oreFlaw:ore.flaw/100,
         oreLuster:ore.luster/100,oreDensity:ore.density/100,oreCrust:ore.crust/100,orePurity:ore.purity/100}))u[name].value=value;
-      u.oreBaseColor.value.set(rock.base);u.oreVeinColor.value.set(rock.vein);u.oreCoreColor.value.set(rock.core);
+      u.oreBaseColor.value.set(rock.base);setOreOptics(u,ore);
       const material=makeOreMaterial(null,u,ore.family);
       const specimen=new T.Mesh(mesh.geometry,material);
       specimen.rotation.set(.20,.28,-.14);
@@ -414,10 +426,8 @@ export class ForgeStage {
       }
       this.inspectedOre = ore;
       const rock = oreMaterialOf(ore);
-      this.oreUniforms.oreTint.value.set(familyOf(ore.family).color);
+      const optics=setOreOptics(this.oreUniforms,ore);
       this.oreUniforms.oreBaseColor.value.set(rock.base);
-      this.oreUniforms.oreVeinColor.value.set(rock.vein);
-      this.oreUniforms.oreCoreColor.value.set(rock.core);
       this.oreUniforms.oreWindow.value=ore.window ? 1 : 0;
       this.oreUniforms.oreLamp.value=this.mode==='ore' && this.inspection==='lamp' ? 1 : 0;
       this.oreUniforms.oreMaterial.value = rock.style;
@@ -435,7 +445,7 @@ export class ForgeStage {
       this.oreUniforms.oreCrust.value = (ore.crust ?? 50) / 100;
       this.stoneShape = ore.figure;
       this.stoneFamily = ore.family;
-      this.meltUniforms.meltTint.value.set(rock.core);
+      this.meltUniforms.meltTint.value.set(optics.core);
       this.meltUniforms.meltSeed.value=ore.figure ?? .5;
     }
     if (this.mode !== 'refine') this.oreUniforms.oreHeat.value = 0;

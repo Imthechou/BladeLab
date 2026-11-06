@@ -2,9 +2,9 @@ import {
   STORAGE_KEY, WINDOW_PRICE, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, RARE_ODDS, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage,
-} from './forge.js?v=5';
-import { ForgeStage } from './stage.js?v=5';
-import { ForgeSound } from './sound.js?v=5';
+} from './forge.js?v=6';
+import { ForgeStage } from './stage.js?v=6';
+import { ForgeSound } from './sound.js?v=6';
 import { createQaSession } from './qa.js?v=2.1';
 
 const get = id => document.getElementById(id);
@@ -124,7 +124,7 @@ function render() {
           <div><span>纯净度</span><b id="ore-purity">${ore.purity}</b><i style="--value:${ore.purity}%"></i></div>
           <div><span>稳定性</span><b id="ore-stability">${stabilityOf(ore.stability)}</b><i style="--value:${ore.stability}%"></i></div>
         </div>
-        <button type="button" class="heritage-preview" data-action="preview-mineral" aria-pressed="false"><span class="heritage-swatch" style="--core:${mineral.core};--steel:${mineral.steel}"></span><span><small>这块矿的钢纹</small><b>${heritage.name}</b></span><strong>预览刀身 ↗</strong></button>
+        <button type="button" class="heritage-preview" data-action="preview-mineral" aria-pressed="false"><span class="heritage-swatch" style="--core:${heritage.core};--steel:${heritage.tone}"></span><span><small>${heritage.tintName} · ${heritage.clarityName}</small><b>${heritage.name}</b></span><strong>预览刀身 ↗</strong></button>
       </div>`;
       actions.innerHTML = button('to-refine', '送去精炼');
     }

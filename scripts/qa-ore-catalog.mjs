@@ -73,7 +73,49 @@ try{
 
  }
  assert.equal(new Set(steelPrints).size,12,'twelve mineral fingerprints must render differently');
+ // Optical variation: hidden cores must not leak colour through natural light.
  await page.locator('button[data-action="material"][data-id="frost_quartz"]').click();
+ await page.locator('button[data-action="exposure"][data-id="hidden"]').click();
+ const opticShot=async name=>page.locator('.scene').screenshot({path:`${out}/optics-${name}.png`,animations:'disabled'});
+ const waitFrame=()=>page.waitForTimeout(240);
+ const tintButton=id=>page.locator(`button[data-action="tint"][data-id="${id}"]`);
+ await tintButton('azure').click();await waitFrame();const hiddenBlue=await opticShot('hidden-blue');
+ await tintButton('garnet').click();await waitFrame();const hiddenRed=await opticShot('hidden-red');
+ assert.equal(hiddenBlue.toString('base64'),hiddenRed.toString('base64'),'opaque host must conceal its hidden core colour');
+ await page.locator('button[data-action="exposure"][data-id="veiled"]').click();await waitFrame();await opticShot('veiled-red');
+ await page.locator('button[data-action="exposure"][data-id="open"]').click();await waitFrame();
+ const exposedRed=await opticShot('open-red');assert.notEqual(exposedRed.toString('base64'),hiddenRed.toString('base64'));
+ await tintButton('azure').click();await waitFrame();const exposedBlue=await opticShot('open-blue');
+ assert.notEqual(exposedBlue.toString('base64'),exposedRed.toString('base64'));
+ const tints=await page.evaluate(async()=>(await import('./forge.js?v=6')).ORE_TINTS.map(t=>({id:t.id,steel:t.steel})));
+ assert.equal(tints.length,16);
+ const colourPrints=[];
+ for(const tint of tints){
+   if(await page.evaluate(()=>oreReview.stage.mode==='reveal'))await page.locator('button[data-action="toggle"]').click();
+   await tintButton(tint.id).click();
+   await page.locator('button[data-action="clarity"][data-id="90"]').click();
+   await page.locator('button[data-action="toggle"]').click();await page.waitForTimeout(820);
+   await opticShot(tint.id+'-cut');
+   await page.locator('button[data-action="steel"]').click();
+   await page.waitForFunction(()=>oreReview.stage.shown==='straight');await waitFrame();
+   const values=await page.evaluate(()=>({
+     tone:'#'+oreReview.stage.active.uniforms.fOreTone.value.getHexString(),
+     clarity:oreReview.stage.active.uniforms.fOreClarity.value,
+   }));
+   assert.equal(values.tone,tint.steel);assert.equal(values.clarity,.9);
+   colourPrints.push((await opticShot(tint.id+'-steel')).toString('base64'));
+ }
+ assert.equal(new Set(colourPrints).size,16,'sixteen base colours must render as sixteen distinct steel surfaces');
+ await page.locator('button[data-action="toggle"]').click();await tintButton('jade').click();
+ await page.locator('button[data-action="toggle"]').click();await page.waitForTimeout(820);
+ const clarityPrints=[];
+ for(const clarity of [15,55,90]){
+   await page.locator(`button[data-action="clarity"][data-id="${clarity}"]`).click();await waitFrame();
+   clarityPrints.push((await opticShot('jade-clarity-'+clarity)).toString('base64'));
+ }
+ assert.equal(new Set(clarityPrints).size,3,'the same colour must show cloudy, misty and clear interiors');
+ await page.locator('button[data-action="material"][data-id="frost_quartz"]').click();
+
  for(const [grade,label] of [[0,'ordinary'],[1,'good'],[2,'rare']]){
    await page.locator(`button[data-action="grade"][data-id="${grade}"]`).click();
    if(grade===0)await page.locator('button[data-action="toggle"]').click();
@@ -86,7 +128,7 @@ try{
  assert.deepEqual(errors,[], 'GLB loading / WebGL shader should have no errors');
  console.log(JSON.stringify({ok:true,loadedGlbs:glb.length,verticesPerMesh:glb[0].vertices,
    trisPerMesh:glb[0].triangles,materials:materialIds.length,families:families.length,
-   variants:4,viewports:'390x844',errors}));
+   variants:4,tints:16,exposureModes:3,clarityLevels:3,viewports:'390x844',errors}));
 }catch(e){
  await page.screenshot({path:`${out}/99-catalog-failure.png`}).catch(()=>{});
  console.error(e);

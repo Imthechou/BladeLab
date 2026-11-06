@@ -138,6 +138,7 @@ try {
   const archived=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)).collection[0],storageKey);
   assert.equal(archived.ore.material,source.material);assert.equal(archived.ore.figure,source.figure);
   assert.equal(archived.ore.window,true);
+  for(const key of ['tint','exposure','clarity'])assert.equal(archived.ore[key],source[key],key+' survives the complete journey');
   await page.reload({waitUntil:'load'});await page.waitForTimeout(600);
   assert.equal(await step(),'appraise');
   await page.locator('#collection').click();
