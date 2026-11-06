@@ -49,12 +49,52 @@ export const ORE_MATERIALS = Object.freeze([
 ]);
 export const oreMaterialOf = ore => ORE_MATERIALS.find(item => item.id === ore?.material) ||
   ORE_MATERIALS.find(item => item.family === ore?.family) || ORE_MATERIALS[0];
+
+// Mineral colour, surface exposure and optical clarity are independent of the
+// host-rock family. A plain dark stone can conceal a clear, brightly coloured core.
+export const ORE_TINTS = Object.freeze([
+  { id:'jade', name:'翠绿', core:'#56bb93', steel:'#579e87' },
+  { id:'teal', name:'碧青', core:'#3fa69d', steel:'#588b88' },
+  { id:'azure', name:'冰蓝', core:'#5dadd2', steel:'#5e8fac' },
+  { id:'cobalt', name:'钴蓝', core:'#526ed1', steel:'#586da5' },
+  { id:'amethyst', name:'紫晶', core:'#9472c7', steel:'#8e76ab' },
+  { id:'rose', name:'烟粉', core:'#d590bd', steel:'#b17f9d' },
+  { id:'garnet', name:'绛红', core:'#ae535d', steel:'#995c6b' },
+  { id:'copper', name:'赤铜', core:'#cc8556', steel:'#ad7c5d' },
+  { id:'amber', name:'琥珀', core:'#e2ac4e', steel:'#b69857' },
+  { id:'gold', name:'浅金', core:'#d8c786', steel:'#b2a77a' },
+  { id:'olive', name:'橄榄', core:'#a6b873', steel:'#8c9970' },
+  { id:'forest', name:'松绿', core:'#5e987a', steel:'#5a836e' },
+  { id:'ivory', name:'霜白', core:'#d7dfdc', steel:'#b0c1c0' },
+  { id:'silver', name:'银灰', core:'#aebfcb', steel:'#91a7b5' },
+  { id:'ink', name:'墨蓝', core:'#4c6488', steel:'#4c617e' },
+  { id:'obsidian', name:'曜黑', core:'#4e4b60', steel:'#5a566f' },
+]);
+export const ORE_EXPOSURES = Object.freeze([
+  { id:'hidden', name:'藏矿', value:0 },
+  { id:'veiled', name:'隐露', value:.27 },
+  { id:'open', name:'外露', value:1 },
+]);
+export const oreOptics = ore => {
+  const material=oreMaterialOf(ore);
+  const tint=ORE_TINTS.find(t => t.id===ore?.tint);
+  const exposure=ORE_EXPOSURES.find(e=>e.id===ore?.exposure);
+  const clarity=Number.isFinite(ore?.clarity) ? Math.max(0,Math.min(1,ore.clarity/100)) : .50;
+  return {
+    tint:tint?.id || 'legacy', name:tint?.name || material.name,
+    core:tint?.core || material.core, steel:tint?.steel || material.steel,
+    exposure:exposure?.value ?? .55, exposureName:exposure?.name || '露矿', clarity,
+    clarityName:clarity<.35 ? '浑浊' : clarity<.70 ? '雾润' : '清透',
+  };
+};
 export const oreModelId = ore => `ore_${FAMILIES.some(f => f.id === ore?.family) ? ore.family : 'river'}_${Math.max(0, Math.min(3, Math.floor(ore?.variant || 0)))}`;
 export const mineralHeritage = ore => {
   const mineral = oreMaterialOf(ore);
+  const optics = oreOptics(ore);
   return {
     family: FAMILIES.findIndex(f => f.id === mineral.family), style: mineral.style,
-    seed: ore?.figure ?? .5, tone: mineral.steel, core: mineral.core,
+    seed: ore?.figure ?? .5, tone: optics.steel, core: optics.core,
+    tint: optics.tint, tintName: optics.name, clarity: optics.clarity, clarityName: optics.clarityName,
     trace: (ore?.vein ?? 52) / 100,
     name: ['水纹层钢', '霜晶钢纹', '赤铜熔脉', '陨铁镍纹', '赭金叠层'][FAMILIES.findIndex(f => f.id === mineral.family)],
   };
@@ -182,8 +222,15 @@ export function offers(run) {
     const choices = ORE_MATERIALS.filter(material => material.family === family.id);
     const material = choices[Math.floor(roll() * choices.length)].id;
     const variant = Math.floor(roll() * ORE_VARIANTS.length);
+    // A separate stream preserves the existing price, quality and forging rolls.
+    const optical=rngFor(run.seed,'ore-optics-v1',id);
+    const tint=ORE_TINTS[Math.floor(optical()*ORE_TINTS.length)].id;
+    const exposureRoll=optical();
+    const exposure=exposureRoll<.34 ? 'hidden' : exposureRoll<.70 ? 'veiled' : 'open';
+    const clarity=Math.round(8+optical()*86);
     return { id, family: family.id, material, variant, price, grade, clue, figure, purity, stability, tier,
-      vein, flaw, luster, density, crust, window: Boolean(run.inspections?.[id]), number: String(id + 1).padStart(2, '0') };
+      vein, flaw, luster, density, crust, tint, exposure, clarity,
+      window: Boolean(run.inspections?.[id]), number: String(id + 1).padStart(2, '0') };
   });
 }
 
