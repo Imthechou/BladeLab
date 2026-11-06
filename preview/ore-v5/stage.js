@@ -1,8 +1,8 @@
-import { sectionContour } from './ore-section.js?v=12';
-import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=12';
-import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=12';
+import { sectionContour } from './ore-section.js?v=13';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=13';
+import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=13';
 import { KNIFE_IDS, regionAt } from './regions.js?v=2';
-import { RenderBudget } from './render-budget.js?v=12';
+import { RenderBudget } from './render-budget.js?v=13';
 
 const T = globalThis.THREE;
 const modelFiles = {

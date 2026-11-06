@@ -3,10 +3,10 @@ import {
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
-} from './forge.js?v=12';
-import { ForgeStage } from './stage.js?v=12';
-import { ForgeSound } from './sound.js?v=12';
-import { createQaSession } from './qa.js?v=12';
+} from './forge.js?v=13';
+import { ForgeStage } from './stage.js?v=13';
+import { ForgeSound } from './sound.js?v=13';
+import { createQaSession } from './qa.js?v=13';
 
 const get = id => document.getElementById(id);
 const canvas = get('scene');
