@@ -23,7 +23,7 @@ const image = name => page.screenshot({ path: `${output}/${name}.png`, animation
 const step = () => page.locator('#stage').getAttribute('data-mode');
 const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 try {
-  await page.goto(origin+'?v=12', { waitUntil: 'load' });
+  await page.goto(origin+'?v=13', { waitUntil: 'load' });
   await page.waitForSelector('.ore-grid .ore-card');
   await page.waitForFunction(()=>[...document.querySelectorAll('.ore-thumbnail img')].every(img=>img.naturalWidth>0));
   await page.waitForTimeout(600);

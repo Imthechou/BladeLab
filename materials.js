@@ -1,4 +1,4 @@
-import { MARK_WIDTH, MARK_HEIGHT, oreMaterialOf, mineralHeritage } from './forge.js?v=12';
+import { MARK_WIDTH, MARK_HEIGHT, oreMaterialOf, mineralHeritage } from './forge.js?v=13';
 
 const T = globalThis.THREE;
 const metalId = { raw: 0, silver: 1, pearl: 2, gunmetal: 3, obsidian: 4 };

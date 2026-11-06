@@ -19,7 +19,18 @@ test('sustained slow play adapts within a second without rapid reallocations or 
 
 test('background gaps and a zoomed-out screen do not lower or raise the pixel budget', () => {
   const budget = new RenderBudget(.8);
-  for (let i = 0; i < 50; i++) assert.equal(budget.sample(1000, i * 1000), null);
+  for (let i = 0; i < 50; i++) assert.equal(budget.sample(1000, i * 1000, false), null);
   for (let i = 0; i < 100; i++) assert.equal(budget.sample(40, i * 40), null);
   assert.equal(budget.ratio, .8);
+});
+
+test('several very slow active frames still reduce load instead of being discarded as pauses', () => {
+  const budget = new RenderBudget(1.5);
+  assert.equal(budget.sample(500, 500), null);
+  assert.equal(budget.sample(16.7, 517), null);
+  assert.equal(budget.sample(450, 967), null);
+  assert.equal(budget.sample(450, 1417), null);
+  assert.equal(budget.sample(450, 1867), 1.25);
+  for (let i = 0; i < 20; i++) budget.sample(16.7, 1900 + i * 17);
+  assert.equal(budget.ratio, 1.25, 'do not immediately raise quality and oscillate');
 });
