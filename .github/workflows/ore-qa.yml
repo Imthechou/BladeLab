@@ -26,6 +26,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: bladelab-qa-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   refining:
     name: Refining quality and furnace failure

@@ -11,7 +11,7 @@ await mkdir(out, { recursive: true });
 if (process.env.QA_ORIGIN) {
   let ready = false;
   for (let i = 0; i < 40 && !ready; i++) {
-    try { ready = (await (await fetch(root + '?refining-revision=' + Date.now())).text()).includes('app.js?v=10'); } catch {}
+    try { ready = (await (await fetch(root + '?refining-revision=' + Date.now())).text()).includes('app.js?v=11'); } catch {}
     if (!ready) await new Promise(resolve => setTimeout(resolve, 3000));
   }
   assert.ok(ready, 'published V10 must be active before browser acceptance');
@@ -38,7 +38,7 @@ async function openFurnace(width = 390, lowWallet = false) {
   await page.addInitScript(({ key, save }) => {
     if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(save));
   }, { key: storageKey, save });
-  await page.goto(root + '?v=10', { waitUntil: 'load' });
+  await page.goto(root + '?v=11', { waitUntil: 'load' });
   await page.waitForSelector('#heat-quality');
   assert.equal(await mode(), 'refine');
   assert.equal(await page.locator('#pour-button').isDisabled(), true);
@@ -52,7 +52,7 @@ async function operate(policy, stopQuality = Infinity) {
   const bounds = await button.boundingBox();
   assert.ok(bounds);
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-  let down = false, seenMolten = false, warned = false, resumed = false, qualityShot = false;
+  let down = false, seenMolten = false, warned = false, resumed = false;
   const deadline = Date.now() + 45000;
   while (Date.now() < deadline) {
     const reading = await page.evaluate(() => ({
@@ -70,8 +70,8 @@ async function operate(policy, stopQuality = Infinity) {
     warned ||= reading.warning;
     if (reading.quality >= stopQuality && reading.canPour) {
       if (down) { await page.mouse.up(); down = false; }
-      await shot(policy + '-before-pour');
       await page.locator('#pour-button').click();
+      await shot(policy + '-pouring');
       await page.waitForFunction(() => document.querySelector('#stage').dataset.mode !== 'refine');
       break;
     }
@@ -84,12 +84,17 @@ async function operate(policy, stopQuality = Infinity) {
       assert.equal(after.credits, before.credits);
       assert.equal(after.run.ore.figure, before.run.ore.figure);
       assert.ok(after.run.refining.quality >= before.run.refining.quality - 3, 'refresh preserves earned refining quality');
+      await page.waitForTimeout(500);
+      assert.deepEqual((await stored()).run.refining, after.run.refining, 'loading stays paused until the player resumes');
+      assert.equal(await page.locator('#heat-button').innerText(), '按住续炼');
+      await shot('excellent-paused-continue');
       resumed = true;
+      await page.locator('#heat-button').scrollIntoViewIfNeeded();
       const newBounds = await page.locator('#heat-button').boundingBox();
       await page.mouse.move(newBounds.x + newBounds.width / 2, newBounds.y + newBounds.height / 2);
+      await page.mouse.down(); down = true;
       continue;
     }
-    if (reading.quality >= 65 && !qualityShot) { await shot('good-control-in-progress'); qualityShot = true; }
     let desired;
     if (policy === 'burnt') desired = true;
     else if (policy === 'unmelted') desired = !down && !seenMolten && reading.temperature === 35 && !resumed;
