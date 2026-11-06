@@ -70,7 +70,14 @@ async function operate(policy, stopQuality = Infinity) {
     warned ||= reading.warning;
     if (reading.quality >= stopQuality && reading.canPour) {
       if (down) { await page.mouse.up(); down = false; }
-      await page.locator('#pour-button').click();
+      // Auto-pouring can start between the last reading and the real click.
+      // Accept that transition, but never force a disabled control.
+      try { await page.locator('#pour-button').click({ timeout: 900 }); }
+      catch (error) {
+        const current = await page.evaluate(() => ({ mode: document.querySelector('#stage').dataset.mode,
+          step: document.querySelector('#heat-step')?.textContent }));
+        if (current.mode === 'refine' && current.step !== '浇注成坯') throw error;
+      }
       await shot(policy + '-pouring');
       await page.waitForFunction(() => document.querySelector('#stage').dataset.mode !== 'refine');
       break;

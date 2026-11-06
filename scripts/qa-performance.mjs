@@ -137,7 +137,12 @@ async function measure(version, phase, width) {
     if (down) await page.mouse.up();
   } else if (phase === 'forge') {
     await page.locator('#scene').focus();
-    for (let i = 0; i < 6; i++) { await page.keyboard.press('Space'); await page.waitForTimeout(650); }
+    for (let i = 1; i <= 6; i++) {
+      await page.keyboard.press('Space');
+      await page.waitForFunction(expected => Number(document.querySelector('#hit-count')?.textContent.split(' ')[0]) >= expected,
+        i, { timeout: 12000 });
+      await page.waitForTimeout(550);
+    }
     assert.equal(await page.locator('#hit-count').innerText(), '6 锤');
     await page.waitForTimeout(600);
   } else {
