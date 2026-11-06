@@ -87,7 +87,7 @@ try{
  const exposedRed=await opticShot('open-red');assert.notEqual(exposedRed.toString('base64'),hiddenRed.toString('base64'));
  await tintButton('azure').click();await waitFrame();const exposedBlue=await opticShot('open-blue');
  assert.notEqual(exposedBlue.toString('base64'),exposedRed.toString('base64'));
- const tints=await page.evaluate(async()=>(await import('./forge.js?v=8')).ORE_TINTS.map(t=>({id:t.id,steel:t.steel})));
+ const tints=await page.evaluate(async()=>(await import('./forge.js?v=9')).ORE_TINTS.map(t=>({id:t.id,steel:t.steel})));
  assert.equal(tints.length,16);
  const colourPrints=[];
  for(const tint of tints){

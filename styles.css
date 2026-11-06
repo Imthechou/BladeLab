@@ -336,7 +336,5 @@ dialog::backdrop { background: #090807be; }
 }
 @media(prefers-reduced-motion:reduce) { .ore-result,.ore-suspense-track i,.ore-echo.is-echoing,.ore-thumbnail i { animation:none; } }
 
-.stage[data-mode="ore"][data-inspection="side"] { background:radial-gradient(ellipse at 20% 45%,#35444c,#10181d 58%,#080d10); }
 .stage[data-mode="ore"][data-inspection="lamp"] { background:radial-gradient(ellipse at 52% 43%,#202d2c,#080e10 58%,#05090b); }
-.stage[data-mode="ore"][data-inspection="side"] #inspection-note,
 .stage[data-mode="ore"][data-inspection="lamp"] #inspection-note { background:#111c21dd;border:1px solid #a9c1bc66;border-radius:7px;padding:5px 9px;color:#e5e4cc; }

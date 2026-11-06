@@ -70,7 +70,7 @@ jobs:
           retention-days: 7
 
   inspection-visual:
-    name: Visible side-light and flashlight inspection
+    name: Flashlight inspection
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

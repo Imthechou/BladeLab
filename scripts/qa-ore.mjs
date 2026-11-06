@@ -50,10 +50,8 @@ try {
   await page.locator('.ore-card').nth(1).click();
   assert.match(await page.locator('#ore-position').innerText(), /2 \/ 3/);
   const freeBalance=Number(await page.locator('#credits').innerText());
-  await page.locator('[data-action="inspect-light"][data-id="side"]').click();
-  assert.equal(await page.locator('[data-id="side"]').getAttribute('aria-pressed'),'true');
-  await page.waitForTimeout(1000);
-  await image('01d-side-light');
+  assert.equal(await page.locator('[data-action="inspect-light"]').count(),1,'only flashlight inspection remains');
+  assert.equal(await page.locator('[data-action="inspect-light"][data-id="side"]').count(),0);
   await page.locator('[data-action="inspect-light"][data-id="lamp"]').click();
   await page.waitForTimeout(350);
   await image('01e-mineral-lamp');

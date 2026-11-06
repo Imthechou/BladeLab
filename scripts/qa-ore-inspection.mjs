@@ -42,12 +42,9 @@ try{
   await click('family',family);await click('grade','0');await click('tint','jade');await click('exposure','hidden');await click('clarity','55');
   await click('inspection','natural');await wait();
   const natural=await pixels();await snapshot(family+'-natural');
-  await click('inspection','side');await page.waitForTimeout(1050);
-  const side=await pixels();await snapshot(family+'-side');
   await click('inspection','lamp');await wait();
   const lamp=await pixels();await snapshot(family+'-lamp');
-  const sideDelta=difference(natural,side),lampDelta=difference(natural,lamp),lit=brightness(lamp);
-  assert.ok(sideDelta>.065,`${family}: side illumination must be visibly different (${sideDelta})`);
+  const lampDelta=difference(natural,lamp),lit=brightness(lamp);
   assert.ok(lampDelta>.075,`${family}: lamp illumination must be visibly different (${lampDelta})`);
   assert.ok(lit.max>.68 && lit.max-lit.median>.12,`${family}: a clearly localized lamp hotspot is required`);
   assert.ok(lit.mean>.11,`${family}: inspection must not simply black out the ore`);
@@ -62,7 +59,7 @@ try{
   const high=await page.evaluate(()=>oreReview.stage.oreUniforms.oreTransmission.value);
   const opticalDelta=difference(opaque,clear);
   assert.ok(high>low+.35 && opticalDelta>.02,`${family}: clear and opaque cores need distinguishable light responses (${opticalDelta})`);
-  metrics.push({family,sideDelta,lampDelta,restored,opticalDelta,brightness:lit});
+  metrics.push({family,lampDelta,restored,opticalDelta,brightness:lit});
  }
  // Also exercise the actual player buttons, free cost, toggle-off and stone switching.
  await page.goto(root,{waitUntil:'load'});await page.waitForSelector('.ore-card');
@@ -70,10 +67,9 @@ try{
  const credits=await page.locator('#credits').innerText();
  for(const width of [390,320]){
   await page.setViewportSize({width,height:844});await wait();
-  await page.locator('[data-action="inspect-light"][data-id="side"]').click();await page.waitForTimeout(1000);
-  assert.equal(await page.locator('#stage').getAttribute('data-inspection'),'side');
-  assert.match(await page.locator('#inspection-note').innerText(),/侧光.*裂/);
-  await page.screenshot({path:`${out}/player-${width}-side.png`,animations:'disabled'});
+  assert.equal(await page.locator('[data-action="inspect-light"]').count(),1);
+  assert.equal(await page.locator('[data-action="inspect-light"][data-id="side"]').count(),0);
+  await page.screenshot({path:`${out}/player-${width}-natural.png`,animations:'disabled'});
   await page.locator('[data-action="inspect-light"][data-id="lamp"]').click();await wait();
   assert.equal(await page.locator('#stage').getAttribute('data-inspection'),'lamp');
   assert.match(await page.locator('#inspection-note').innerText(),/打灯/);
@@ -82,7 +78,7 @@ try{
   assert.equal(await page.locator('#stage').getAttribute('data-inspection'),'natural');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)<=2);
  }
- await page.locator('[data-action="inspect-light"][data-id="side"]').click();
+ await page.locator('[data-action="inspect-light"][data-id="lamp"]').click();
  await page.locator('.ore-card').nth(1).click();
  assert.equal(await page.locator('#stage').getAttribute('data-inspection'),'natural');
  assert.equal(await page.locator('#credits').innerText(),credits,'inspection lighting must be free');
