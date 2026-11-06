@@ -92,10 +92,8 @@ export const oreInspection = ore => {
   const shell=Math.max(0,Math.min(1,(ore?.crust ?? 50)/100));
   const transmission=Math.max(.04,Math.min(.96,
     .04+Math.pow(optics.clarity,1.4)*.92*(1.-shell*.82)+optics.exposure*.10+(ore?.window ? .22 : 0)));
-  const flaw=ore?.flaw ?? 43;
   return {
     transmission,
-    side:flaw>=50 ? '裂隙密集 · 转动查看断续暗缝' : flaw>=25 ? '细裂可见 · 转动查看颗粒起伏' : '裂隙稀少 · 表皮较完整',
     lamp:transmission>=.60 ? '色晕透入 · 内层较清' : transmission>=.26 ? '浅层散光 · 石皮仍有遮挡' : '光停在表皮 · 内芯未透出',
   };
 };

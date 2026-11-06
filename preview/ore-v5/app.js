@@ -2,9 +2,9 @@ import {
   STORAGE_KEY, WINDOW_PRICE, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, RARE_ODDS, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
-} from './forge.js?v=8';
-import { ForgeStage } from './stage.js?v=8';
-import { ForgeSound } from './sound.js?v=8';
+} from './forge.js?v=9';
+import { ForgeStage } from './stage.js?v=9';
+import { ForgeSound } from './sound.js?v=9';
 import { createQaSession } from './qa.js?v=2.1';
 
 const get = id => document.getElementById(id);
@@ -174,7 +174,7 @@ function renderTools(run,ore) {
   if(toolStone!==key){inspectionMode='natural';toolStone=key;}
   stageBox.dataset.inspection=inspectionMode;
   const checked=oreInspection(ore);
-  get('inspection-note').textContent=inspectionMode==='side' ? '侧光 · '+checked.side : inspectionMode==='lamp' ? '打灯 · '+checked.lamp : ore.window ? '小窗只是局部，内部仍有未知' : '转动原石，寻找露脉与石皮';
+  get('inspection-note').textContent=inspectionMode==='lamp' ? '打灯 · '+checked.lamp : ore.window ? '小窗只是局部，内部仍有未知' : '转动原石，寻找露脉与石皮';
   document.querySelectorAll('[data-action="inspect-light"]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===inspectionMode)));
   const windowButton=get('window-ore');
   windowButton.disabled=ore.window || save.credits<ore.price+WINDOW_PRICE;
@@ -377,7 +377,7 @@ document.addEventListener('click', event => {
   if (['ore-prev', 'ore-next', 'next-batch', 'buy', 'select-ore', 'window-ore', 'tap-ore', 'inspect-light'].includes(action)) qa?.input();
   const run = save.run;
   let message;
-  if(action==='inspect-light' && run.phase==='ore'){
+  if(action==='inspect-light' && run.phase==='ore' && id==='lamp'){
     inspectionMode=inspectionMode===id ? 'natural' : id;
     stage?.setInspection(inspectionMode);renderTools(run,offers(run)[run.selected]);return;
   } else if(action==='tap-ore' && run.phase==='ore'){
