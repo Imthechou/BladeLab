@@ -3,10 +3,10 @@ import {
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
-} from './forge.js?v=11';
-import { ForgeStage } from './stage.js?v=11';
-import { ForgeSound } from './sound.js?v=11';
-import { createQaSession } from './qa.js?v=11';
+} from './forge.js?v=12';
+import { ForgeStage } from './stage.js?v=12';
+import { ForgeSound } from './sound.js?v=12';
+import { createQaSession } from './qa.js?v=12';
 
 const get = id => document.getElementById(id);
 const canvas = get('scene');
@@ -31,6 +31,8 @@ let queuedStop = false;
 let resultPause = false;
 let revealPending = false;
 let heatInput;
+let heatHud;
+let saveTask;
 let drag;
 let trayKey;
 let webglError = false;
@@ -48,6 +50,11 @@ function restore() {
 }
 
 function persist() {
+  if (saveTask) {
+    if (saveTask.idle) cancelIdleCallback(saveTask.id);
+    else clearTimeout(saveTask.id);
+    saveTask = null;
+  }
   if (qa) return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(save));
@@ -55,6 +62,13 @@ function persist() {
     if (!storageFailed) get('announcer').textContent = '浏览器限制本地存档，本页可继续试玩。';
     storageFailed = true;
   }
+}
+
+function persistWhenIdle() {
+  if (qa || saveTask) return;
+  const idle = typeof requestIdleCallback === 'function';
+  const write = () => { saveTask = null; persist(); };
+  saveTask = { idle, id: idle ? requestIdleCallback(write, { timeout: 500 }) : setTimeout(write, 80) };
 }
 
 function button(action, label, { kind = 'primary', off = false, id = '' } = {}) {
@@ -78,6 +92,7 @@ function lookChips(run) {
 
 function render() {
   const run = save.run;
+  heatHud = null;
   const { phase } = run;
   qa?.phase(phase);
   const failedRefining = run.last?.type === 'refine-fail';
@@ -147,6 +162,10 @@ function render() {
     </div>`;
     actions.innerHTML = button('heat', '按住鼓风', { id: 'heat-button' }) +
       button('pour-refine', '排渣中…', { kind: 'secondary', id: 'pour-button', off: true });
+    heatHud = { nodes: Object.fromEntries(['thermo', 'heat-step', 'heat-number', 'heat-clock', 'heat-fill',
+      'heat-needle', 'heat-range', 'heat-target', 'heat-draft', 'heat-rank', 'heat-quality', 'heat-quality-meter',
+      'heat-progress', 'heat-damage', 'heat-damage-value', 'heat-note', 'heat-button', 'pour-button'].map(id => [id, get(id)])),
+      values: Object.create(null), updated: -Infinity, state: '' };
     drawHeat();
   } else if (phase === 'forge') {
     const risk = fractureRisk(run);
@@ -239,10 +258,13 @@ function say(text, type = '') {
   get('announcer').textContent = text;
 }
 
-function drawHeat() {
+function drawHeat(now = performance.now(), force = false) {
   const heat = save.run.refining;
-  const thermo = get('thermo');
-  if (!heat || !thermo) return;
+  if (!heat || !heatHud) return;
+  const { nodes, values } = heatHud;
+  const put = (key, value, apply) => { if (values[key] !== value) { values[key] = value; apply(value); } };
+  const text = (id, value) => put(id, value, value => { nodes[id].textContent = value; });
+  const transform = (id, value) => put(id, value, value => { nodes[id].style.transform = value; });
   const temperature = Math.round(heat.temperature);
   const band = heatBand(heat);
   const green = heat.step === 'molten' && heat.temperature >= band.lower && heat.temperature <= band.upper;
@@ -250,37 +272,14 @@ function drawHeat() {
   const rank = refinementRank(heat.quality);
   const outcome = REFINEMENT_RESULTS[rank];
   const paused = !heatInput && heat.step !== 'cast';
-  get('heat-step').textContent = { ore: '原石升温', molten: '熔球稳温', cast: '浇注成坯' }[heat.step];
-  get('heat-number').textContent = temperature + '°';
-  get('heat-clock').textContent = heat.step === 'cast' ? '浇注中' : paused ? heat.elapsed ? '待续炼' : '待点火' : Math.max(0, (heat.step === 'ore' ? HEAT.preheat : HEAT.window) - heat.elapsed).toFixed(1) + ' s';
-  get('heat-fill').style.width = temperature + '%';
-  get('heat-needle').style.left = temperature + '%';
-  get('heat-range').style.left = band.lower + '%';
-  get('heat-range').style.width = (band.upper - band.lower) + '%';
-  get('heat-target').textContent = band.lower.toFixed(0) + '–' + band.upper.toFixed(0) + '°';
-  thermo.dataset.lower = band.lower.toFixed(2);
-  thermo.dataset.upper = band.upper.toFixed(2);
-  get('heat-draft').textContent = paused ? heat.elapsed ? '按住续炼' : '按住点火' : heat.draft > .5 ? '余热 ↑' : '散热 ↓';
-  get('heat-rank').textContent = rank === 'failed' ? '尚未成坯' : outcome.label;
-  get('heat-quality').textContent = Math.floor(heat.quality) + ' / 100';
-  get('heat-quality-meter').setAttribute('aria-valuenow', Math.floor(heat.quality));
-  get('heat-progress').style.width = heat.quality + '%';
-  get('heat-damage').style.width = heat.damage + '%';
-  get('heat-damage-value').textContent = Math.round(heat.damage) + '%';
-  get('heat-note').textContent = paused && heat.elapsed ? '火候已保留 · 按住继续，松手散热' : heat.step === 'ore' ? '加热到 65° 熔化 · 松手仍有余热' : heat.step === 'cast' ? outcome.label + ' · 熔钢入模' :
-    heat.temperature >= 82 ? '过热烧损 · 立即松手' : heat.temperature <= 58 ? '即将凝固 · 立即鼓风' :
-      green ? '绿区排渣中 · 可择机浇注' : '追随绿区 · 提前松手留余热';
-  thermo.setAttribute('aria-valuenow', temperature);
-  stageBox.dataset.heat = heat.step;
-  stageBox.dataset.danger = String(danger);
-  const button = get('heat-button');
-  button.disabled = heat.step === 'cast';
-  button.textContent = paused && heat.elapsed ? '按住续炼' : '按住鼓风';
-  button.classList.toggle('heating', heat.step !== 'cast' && Boolean(heatInput?.blowing));
-  const pour = get('pour-button');
-  pour.disabled = heat.step !== 'molten' || heat.elapsed < HEAT.minimum || heat.quality < HEAT.minQuality;
-  pour.textContent = heat.step === 'cast' ? '浇注中…' : pour.disabled ? '排渣后浇注' : '浇注 · ' + ({ excellent: '极佳', good: '良好', fair: '普通', poor: '勉强' })[rank];
-  stage?.setHeat(heat);
+  // Keep motion and the simulation at display cadence, without relaying out the
+  // panel. Numeric text is sampled separately and unchanged content is untouched.
+  transform('heat-fill', `scaleX(${(heat.temperature / 100).toFixed(4)})`);
+  transform('heat-needle', `translateX(${heat.temperature.toFixed(2)}%)`);
+  transform('heat-range', `translateX(${band.lower.toFixed(2)}%)`);
+  transform('heat-progress', `scaleX(${(heat.quality / 100).toFixed(4)})`);
+  transform('heat-damage', `scaleX(${(heat.damage / 100).toFixed(4)})`);
+  stage?.setHeat(heat, Boolean(heatInput));
   if (heatInput) {
     if (green && !heatInput.green && performance.now() - (heatInput.lastCue ?? 0) > 450) {
       sound.play('heat');
@@ -288,6 +287,33 @@ function drawHeat() {
     }
     heatInput.green = green;
   }
+  const canPour = heat.step === 'molten' && heat.elapsed >= HEAT.minimum && heat.quality >= HEAT.minQuality;
+  const state = [heat.step, danger, rank, paused, Boolean(heatInput?.blowing), canPour].join('|');
+  if (!force && state === heatHud.state && now - heatHud.updated < 80) return;
+  heatHud.state = state;
+  heatHud.updated = now;
+  text('heat-step', { ore: '原石升温', molten: '熔球稳温', cast: '浇注成坯' }[heat.step]);
+  text('heat-number', temperature + '°');
+  text('heat-clock', heat.step === 'cast' ? '浇注中' : paused ? heat.elapsed ? '待续炼' : '待点火' : Math.max(0, (heat.step === 'ore' ? HEAT.preheat : HEAT.window) - heat.elapsed).toFixed(1) + ' s');
+  text('heat-target', band.lower.toFixed(0) + '–' + band.upper.toFixed(0) + '°');
+  put('lower', band.lower.toFixed(2), value => { nodes.thermo.dataset.lower = value; });
+  put('upper', band.upper.toFixed(2), value => { nodes.thermo.dataset.upper = value; });
+  text('heat-draft', paused ? heat.elapsed ? '按住续炼' : '按住点火' : heat.draft > .5 ? '余热 ↑' : '散热 ↓');
+  text('heat-rank', rank === 'failed' ? '尚未成坯' : outcome.label);
+  text('heat-quality', Math.floor(heat.quality) + ' / 100');
+  put('quality-aria', Math.floor(heat.quality), value => nodes['heat-quality-meter'].setAttribute('aria-valuenow', value));
+  text('heat-damage-value', Math.round(heat.damage) + '%');
+  text('heat-note', paused && heat.elapsed ? '火候已保留 · 按住继续，松手散热' : heat.step === 'ore' ? '加热到 65° 熔化 · 松手仍有余热' : heat.step === 'cast' ? outcome.label + ' · 熔钢入模' :
+    heat.temperature >= 82 ? '过热烧损 · 立即松手' : heat.temperature <= 58 ? '即将凝固 · 立即鼓风' :
+      green ? '绿区排渣中 · 可择机浇注' : '追随绿区 · 提前松手留余热');
+  put('temperature-aria', temperature, value => nodes.thermo.setAttribute('aria-valuenow', value));
+  put('step', heat.step, value => { stageBox.dataset.heat = value; });
+  put('danger', danger, value => { stageBox.dataset.danger = String(value); });
+  put('heat-disabled', heat.step === 'cast', value => { nodes['heat-button'].disabled = value; });
+  text('heat-button', paused && heat.elapsed ? '按住续炼' : '按住鼓风');
+  put('blowing', heat.step !== 'cast' && Boolean(heatInput?.blowing), value => nodes['heat-button'].classList.toggle('heating', value));
+  put('pour-disabled', !canPour, value => { nodes['pour-button'].disabled = value; });
+  text('pour-button', heat.step === 'cast' ? '浇注中…' : !canPour ? '排渣后浇注' : '浇注 · ' + ({ excellent: '极佳', good: '良好', fair: '普通', poor: '勉强' })[rank]);
 }
 
 function heatFrame(now) {
@@ -318,11 +344,12 @@ function heatFrame(now) {
       stage?.sync(run, run.ore, null);
       sound.play(run.refining.step === 'molten' ? 'melt' : 'cast');
     }
-    if (now - heatInput.saved > 450 || before !== run.refining.step) {
-      persist();
+    if (now - heatInput.saved > 1200 || before !== run.refining.step) {
+      if (before !== run.refining.step) persist();
+      else persistWhenIdle();
       heatInput.saved = now;
     }
-    drawHeat();
+    drawHeat(now);
   }
   requestAnimationFrame(heatFrame);
 }
@@ -499,6 +526,7 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 window.addEventListener('blur', releaseHeat);
+window.addEventListener('pagehide', persist);
 document.addEventListener('keydown', event => {
   if (![' ', 'Enter'].includes(event.key) || event.repeat || get('vault').open) return;
   if (event.target.id === 'heat-button') {
