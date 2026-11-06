@@ -1,7 +1,8 @@
-import { sectionContour } from './ore-section.js?v=11';
-import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=11';
-import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=11';
+import { sectionContour } from './ore-section.js?v=12';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=12';
+import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=12';
 import { KNIFE_IDS, regionAt } from './regions.js?v=2';
+import { RenderBudget } from './render-budget.js?v=12';
 
 const T = globalThis.THREE;
 const modelFiles = {
@@ -218,6 +219,7 @@ export class ForgeStage {
     this.canvas = canvas;
     this.renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    this.budget = new RenderBudget(this.renderer.getPixelRatio());
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.toneMapping = T.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.04;
@@ -259,6 +261,12 @@ export class ForgeStage {
     this.loader = new T.GLTFLoader();
     this.cache = new Map();
     this.pending = new Map();
+    this.warmed = new Set();
+    this.warmQueue = [];
+    this.warmQueued = new Set();
+    this.warmBusy = false;
+    this.warmTicket = null;
+    this.warmScenes = new Map();
     this.thumbnailCache = new Map();
     this.oreUniforms = {
       oreTint: { value: new T.Color() }, oreSeed: { value: 0 },
@@ -284,8 +292,14 @@ export class ForgeStage {
     this.entered = performance.now();
     this.raycaster = new T.Raycaster();
     this.reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.slowFrames = 0;
+    this.dirtyUntil = 0;
+    this.refiningRunning = false;
+    this.onScreen = true;
     new ResizeObserver(() => this.resize()).observe(canvas);
+    if (typeof IntersectionObserver === 'function') new IntersectionObserver(([entry]) => {
+      this.onScreen = entry.isIntersecting;
+      if (this.onScreen) this.invalidate(250);
+    }).observe(canvas);
     this.resize();
     requestAnimationFrame(this.frame);
   }
@@ -348,6 +362,7 @@ export class ForgeStage {
         ctx.putImageData(image,0,0);return canvas.toDataURL('image/png');
       }finally{
         renderer.setRenderTarget(old);renderer.setClearColor(color,alpha);target.dispose();material.dispose();
+        this.invalidate(100);
       }
     }).catch(error=>{this.thumbnailCache.delete(key);throw error;});
     this.thumbnailCache.set(key,pending);
@@ -355,36 +370,90 @@ export class ForgeStage {
     return pending;
   }
 
-  async warm(id) {
+  warm(id) {
+    if (this.warmed.has(id) || this.warmQueued.has(id)) return;
+    this.warmQueued.add(id);
+    this.warmQueue.push(id);
+    this.scheduleWarm();
+  }
+
+  scheduleWarm(delay = 32) {
+    if (this.warmTicket != null || this.warmBusy || !this.warmQueue.length) return;
+    this.warmTicket = setTimeout(() => {
+      const ready = () => { this.warmTicket = null; this.pumpWarm(); };
+      this.warmTicket = typeof requestIdleCallback === 'function' ? requestIdleCallback(ready, { timeout: 300 }) : setTimeout(ready, 0);
+    }, delay);
+  }
+
+  busyForWarm() {
+    return document.hidden || this.blow || (this.mode === 'refine' && this.refiningRunning && this.refiningStep !== 'cast');
+  }
+
+  warmScene(id) {
+    const profile = id === 'molten' ? 'refine' : 'forge';
+    if (!this.warmScenes.has(profile)) {
+      const scene = new T.Scene();
+      scene.environment = this.scene.environment;
+      for (const light of [this.ambient, this.key, this.rimLight, ...(profile === 'forge' ? [this.flash] : [])]) {
+        const copy = light.clone(); copy.visible = true; scene.add(copy);
+      }
+      this.warmScenes.set(profile, scene);
+    }
+    return this.warmScenes.get(profile);
+  }
+
+  async pumpWarm() {
+    if (this.warmBusy || !this.warmQueue.length) return;
+    if (this.busyForWarm()) { this.scheduleWarm(120); return; }
+    this.warmBusy = true;
+    const id = this.warmQueue.shift();
+    this.warmingId = id;
+    let requeued = false;
     try {
+      if (this.warmed.has(id)) return;
       const { mesh } = await this.load(id);
+      if (this.busyForWarm()) { this.warmQueue.unshift(id); requeued = true; return; }
       const temporary = new T.Scene();
       temporary.environment = this.scene.environment;
       temporary.add(mesh.clone());
-      if (this.renderer.extensions.has('KHR_parallel_shader_compile')) await this.renderer.compileAsync(temporary, this.camera, this.scene);
-      else this.renderer.compile(temporary, this.camera, this.scene);
+      const target = this.warmScene(id);
+      if (this.renderer.extensions.has('KHR_parallel_shader_compile')) await this.renderer.compileAsync(temporary, this.camera, target);
+      else this.renderer.compile(temporary, this.camera, target);
+      this.warmed.add(id);
     } catch (error) {
       console.warn('Model preload', id, error);
+    } finally {
+      if (!requeued) this.warmQueued.delete(id);
+      this.warmingId = null;
+      this.warmBusy = false;
+      this.scheduleWarm(80);
     }
   }
 
   prepareRun(run) {
-    if (!run.ore || this.preloadSeed === run.seed) return;
-    this.preloadSeed = run.seed;
+    if (!run.ore) return;
     const { normal, rare } = modelCandidates(run);
-    const keep = new Set(['ore_river_0', oreModelId(run.ore), 'molten', 'blank', normal, ...rare, run.model, this.shown]);
-    for (const [id, item] of this.cache) {
-      if (keep.has(id)) continue;
-      item.mesh.geometry.dispose();
-      item.mesh.material.map?.dispose();
-      item.mesh.material.dispose();
-      item.uniforms.fMarks?.value.dispose();
-      this.cache.delete(id);
+    if (this.preloadSeed !== run.seed) {
+      this.preloadSeed = run.seed;
+      const keep = new Set(['ore_river_0', oreModelId(run.ore), 'molten', 'blank', normal, ...rare, run.model, this.shown]);
+      this.warmQueue = this.warmQueue.filter(id => keep.has(id));
+      this.warmQueued = new Set([...this.warmQueue, ...(this.warmingId && keep.has(this.warmingId) ? [this.warmingId] : [])]);
+      for (const [id, item] of this.cache) {
+        if (keep.has(id)) continue;
+        item.mesh.geometry.dispose();
+        item.mesh.material.map?.dispose();
+        item.mesh.material.dispose();
+        item.uniforms.fMarks?.value.dispose();
+        this.cache.delete(id);
+        this.warmed.delete(id);
+      }
+      for (const id of ['molten', 'blank', normal]) this.warm(id);
     }
-    for (const id of new Set(['molten', 'blank', normal, ...rare, run.model])) this.warm(id);
+    if (run.hits >= 8) for (const id of rare) this.warm(id);
   }
 
-  setHeat(heat) {
+  setHeat(heat, running = false) {
+    this.refiningRunning = running;
     this.heat = heat.temperature / 100;
     this.meltUniforms.meltHeat.value = this.heat;
     this.meltUniforms.meltClean.value = heat.quality / 100;
@@ -402,6 +471,11 @@ export class ForgeStage {
     this.camera.top = vertical / 2;
     this.camera.bottom = -vertical / 2;
     this.camera.updateProjectionMatrix();
+    this.invalidate(200);
+  }
+
+  invalidate(duration = 180) {
+    this.dirtyUntil = Math.max(this.dirtyUntil || 0, performance.now() + duration);
   }
 
   sync(run, ore, fit) {
@@ -409,6 +483,15 @@ export class ForgeStage {
     this.fit = fit;
     const previous = this.mode;
     this.mode = run.phase;
+    const failedRefining = run.last?.type === 'refine-fail';
+    // Zero-intensity lights still cost a PBR lighting loop. Keep only the
+    // phase's lighting types, retaining the exact active light contributions.
+    this.lampLight.visible = this.mode === 'ore';
+    this.sweep.visible = ['reveal', 'fit', 'appraise'].includes(this.mode);
+    this.flash.visible = ['reveal', 'forge'].includes(this.mode) || this.mode === 'broken' && !failedRefining;
+    this.cutFill.visible = this.mode === 'reveal';
+    if (this.mode !== 'refine') this.refiningRunning = false;
+    this.invalidate(300);
     if (previous !== this.mode) {
       this.entered = performance.now();
       this.turnX = this.turnY = 0;
@@ -454,7 +537,6 @@ export class ForgeStage {
     }
     if (this.mode !== 'refine') this.oreUniforms.oreHeat.value = 0;
     this.prepareRun(run);
-    const failedRefining = run.last?.type === 'refine-fail';
     this.meltUniforms.meltFailed.value = failedRefining ? 1 : 0;
     if (failedRefining) {
       this.meltUniforms.meltHeat.value = .08;
@@ -471,6 +553,7 @@ export class ForgeStage {
 
   show(id) {
     if (!this.cache.has(id)) return;
+    this.invalidate(300);
     const asset = this.cache.get(id);
     if (this.shown !== id) {
       if (isOreModel(this.shown)) {
@@ -559,6 +642,7 @@ export class ForgeStage {
     this.oreUniforms.oreLamp.value = mode==='lamp' ? 1 : 0;
     if(mode==='window'){this.turnX=-.08;this.turnY=-.20;}
     this.touched = true;
+    this.invalidate(250);
   }
 
   toggleMineralPreview() {
@@ -571,13 +655,14 @@ export class ForgeStage {
   }
 
   tapOre() {
-    if(this.mode==='ore')this.tappedAt=performance.now();
+    if(this.mode==='ore'){this.tappedAt=performance.now();this.invalidate(700);}
   }
 
   turn(dx, dy) {
     this.touched=true;
     this.turnY += dx * .016;
     this.turnX = clamp(this.turnX + dy * .012, -.9, .9);
+    this.invalidate(180);
   }
 
   project(world, rect) {
@@ -744,15 +829,18 @@ export class ForgeStage {
     const melt = this.shown === 'molten';
     const failedRefining = mode === 'broken' && this.run?.last?.type === 'refine-fail';
     const working = mode === 'forge' || mode === 'broken' || mode === 'refine';
-    if (working && delta > 0 && delta < 160) {
-      this.slowFrames = delta > 25 ? this.slowFrames + 1 : Math.max(0, this.slowFrames - 2);
-      if (this.slowFrames > 75 && this.renderer.getPixelRatio() > 1) {
-        this.renderer.setPixelRatio(Math.max(1, this.renderer.getPixelRatio() - .25));
-        this.resize();
-        this.slowFrames = 0;
-      }
-    }
     const strikeAge = now - (this.bangedAt ?? -5000);
+    const transition = (mode === 'reveal' && elapsed < 1500) || (mode === 'appraise' && elapsed < 5000) ||
+      (this.pieces && now - this.splitAt < 2200) || now - this.swapAt < 350;
+    const continuous = (mode === 'refine' && this.refiningRunning) || this.blow || transition ||
+      now < this.dirtyUntil || strikeAge < 750 || this.sparks.particles.length > 0;
+    const animatedIdle = melt && !failedRefining || this.run?.skin?.fx === 'aurora';
+    const renderDue = this.onScreen && (continuous || animatedIdle && now - (this.lastRender || 0) >= 1000 / 30);
+    if (!renderDue && !continuous) return;
+    if (renderDue && continuous) {
+      const ratio = this.budget.sample(delta, now);
+      if (ratio != null) { this.renderer.setPixelRatio(ratio); this.resize(); }
+    }
     const impulse = Math.exp(-strikeAge / 116) * (this.bangPower || 0);
     const shake = this.reduceMotion ? 0 : impulse * (this.lastImpact?.zone === 'tip' ? .045 : .021) * Math.sin(strikeAge / 21);
     const compression = this.reduceMotion ? 0 : impulse * .035 * (1 - clamp(strikeAge / 105, 0, 1));
@@ -832,7 +920,10 @@ export class ForgeStage {
     this.animatePieces(now);
     this.animateOreCut(elapsed);
     this.animateSparks(dt);
-    this.renderer.render(this.scene, this.camera);
-    this.observeFrame?.(performance.now(), delta, mode, blow);
+    if (renderDue) {
+      this.renderer.render(this.scene, this.camera);
+      this.lastRender = now;
+      this.observeFrame?.(performance.now(), continuous ? delta : 0, mode, blow);
+    }
   };
 }

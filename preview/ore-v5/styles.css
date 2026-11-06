@@ -101,17 +101,20 @@ button, a { touch-action: manipulation; }
 .action-note { color: var(--dim); text-align: center; font-size: 10px; line-height: 1.45; min-height: 12px; }
 .temperature { display: grid; gap: 8px; }
 .thermo { position: relative; height: 17px; border: 1px solid #49382f; border-radius: 5px; overflow: hidden; background: #251d19; }
-.thermo-fill { position: absolute; inset: 0 auto 0 0; width: 0; opacity:.65; background: linear-gradient(90deg, #a04f3a, #fd9753 60%, #ffc58a); }
-.thermo-range { position: absolute; inset: 0 auto 0 69%; width: 7%; background: #9be09f45; border-inline: 1px solid #bde6b1; box-shadow:0 0 8px #b3dca32e; }
-.thermo-needle { position:absolute;inset:0 auto 0 35%;width:2px;background:#fff3df;box-shadow:0 0 5px #fff3df;transform:translateX(-1px); }
+.thermo-fill { position: absolute; inset: 0; width:100%; transform:scaleX(.35);transform-origin:left;opacity:.65; background: linear-gradient(90deg, #a04f3a, #fd9753 60%, #ffc58a); }
+.thermo-range,.thermo-needle { position:absolute;inset:0;width:100%;will-change:transform;pointer-events:none; }
+.thermo-range { transform:translateX(69%); }
+.thermo-range::before { content:"";position:absolute;inset:0 auto 0 0;width:7%;background:#9be09f45;border-inline:1px solid #bde6b1;box-shadow:0 0 8px #b3dca32e; }
+.thermo-needle { transform:translateX(35%); }
+.thermo-needle::before { content:"";position:absolute;inset:0 auto 0 -1px;width:2px;background:#fff3df;box-shadow:0 0 5px #fff3df; }
 .thermo-danger { position: absolute; inset: 0 0 0 86%; background: #ff4d471e; border-left: 2px solid #f2796c; }
 .heat-clock { margin-left:auto;color:var(--muted);font:11px var(--mono); }
 .heat-progress { position:relative;height:8px;border-radius:3px;background:#393b32;overflow:hidden; }
-.heat-progress span { display:block;height:100%;width:0;background:linear-gradient(90deg,#abbf8c,#9bd3c4); }
+.heat-progress span { display:block;height:100%;width:100%;transform:scaleX(0);transform-origin:left;background:linear-gradient(90deg,#abbf8c,#9bd3c4); }
 .heat-progress > i { position:absolute;inset:0 auto 0;width:1px;background:#e5e9dba8; }
 .heat-thresholds { display:flex;justify-content:space-between;gap:7px; }
 .heat-thresholds small { font-size:8px;letter-spacing:0; }
-.heat-damage span { width:0;background:#ee846b; }
+.heat-damage span { width:100%;transform:scaleX(0);transform-origin:left;background:#ee846b;transition:none; }
 .heat-damage-value { color:#f0a28a;font:10px var(--mono); }
 #heat-note { min-height:15px;letter-spacing:0; }
 .refinement-result { display:grid;gap:3px;margin-top:8px;padding:7px 9px;background:#252c29;border-left:2px solid #95b9a7;border-radius:4px; }
