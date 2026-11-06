@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
-const output = 'artifacts/ore-mobile';
+const output = process.env.QA_OUTPUT || 'artifacts/ore-mobile';
 const origin = process.env.QA_ORIGIN || 'http://127.0.0.1:8217/';
 const storageKey=process.env.QA_STORAGE_KEY || 'bladelab.forge.1';
 await mkdir(output, { recursive: true });

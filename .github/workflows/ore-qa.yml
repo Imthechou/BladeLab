@@ -52,6 +52,14 @@ jobs:
         run: node scripts/qa-ore.mjs
       - name: Twenty mineral models, twelve cuts and inherited blade surfaces
         run: node scripts/qa-ore-catalog.mjs
+      - name: Published V5 full mobile journey
+        env:
+          QA_ORIGIN: https://imthechou.github.io/BladeLab/preview/ore-v5/
+          QA_STORAGE_KEY: bladelab.ore-v5.preview.1
+          QA_OUTPUT: artifacts/ore-mobile/live
+        run: node scripts/qa-ore.mjs
+      - name: Published V5 catalog assets
+        run: node scripts/qa-ore-preview.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

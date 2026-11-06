@@ -236,7 +236,7 @@ dialog::backdrop { background: #090807be; }
 .stage[data-mode="ore"]::before,.stage[data-mode="reveal"]::before { opacity:.30; }
 .stage[data-mode="ore"]::after,.stage[data-mode="reveal"]::after { box-shadow:inset 0 0 70px #080d1040; }
 .stage[data-mode="ore"] .stage-footer { display:none; }
-#ore-position { top:58px;bottom:auto;border:0;background:transparent;color:#a9babe;font:10px var(--mono); }
+#ore-position { top:66px;left:20px;transform:none;bottom:auto;border:0;background:transparent;color:#a9babe;font:10px var(--mono); }
 .ore-tools { position:absolute;inset:auto 14px 15px;z-index:4;display:flex;flex-direction:column;align-items:center;gap:9px; }
 .ore-tools[hidden] { display:none; }
 #inspection-note { color:#c1d1d4; font-size:11px;text-shadow:0 1px 4px #000;pointer-events:none; }
@@ -304,7 +304,7 @@ dialog::backdrop { background: #090807be; }
   .workspace:has(.stage[data-mode="ore"]) > .panel,.workspace:has(.stage[data-mode="fit"]) > .panel { order:2; }
   .stage[data-mode="ore"] { height:clamp(260px,37dvh,340px); }
   .stage[data-mode="reveal"] { height:clamp(255px,39dvh,355px); }
-  .stage[data-mode="ore"] #ore-position { top:41px; }
+  .stage[data-mode="ore"] #ore-position { top:54px;left:13px; }
   .ore-tools { inset:auto 6px 10px;gap:7px; }
   .inspection-tools { gap:2px;padding:3px;border-radius:10px; }
   .inspection-tools button { min-width:61px;min-height:42px;padding:3px 6px;font-size:10px; }

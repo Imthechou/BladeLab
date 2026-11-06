@@ -119,7 +119,7 @@ function render() {
       const mineral = oreMaterialOf(ore), heritage = mineralHeritage(ore);
       title('01 / INSIDE THE STONE', GRADES[ore.grade] + ' · ' + family.name, '矿相已揭晓');
       readout.innerHTML = `<div class="ore-report ore-result grade-${ore.grade}">
-        <div class="ore-grade"><span class="ore-grade-icon">${['◆','✦','✧'][ore.grade]}</span><div><small>${mineral.name}</small><strong>${GRADES[ore.grade]}矿芯</strong></div><small>−${ore.price} CR</small></div>
+        <div class="ore-grade"><span class="ore-grade-icon">${['◆','✦','✧'][ore.grade]}</span><div><small>${mineral.name}</small><strong>${GRADES[ore.grade]}矿芯</strong></div><small>选料 −${ore.price + Object.keys(run.inspections || {}).length * WINDOW_PRICE} CR</small></div>
         <div class="mineral-meters">
           <div><span>纯净度</span><b id="ore-purity">${ore.purity}</b><i style="--value:${ore.purity}%"></i></div>
           <div><span>稳定性</span><b id="ore-stability">${stabilityOf(ore.stability)}</b><i style="--value:${ore.stability}%"></i></div>

@@ -347,12 +347,12 @@ export function makeOreMaterial(original, uniforms, family = 'river') {
       float pore=smoothstep(.67,.86,grain)*(1.-oreDensity*.68);
       float crack=(1.-smoothstep(.010,.031,abs(weather-.49)))*smoothstep(.46,.66,n)*oreFlaw;
       // Mineral appears only in a few broken windows through the weathered host.
-      float patch=smoothstep(.58,.73,n)*(1.-oreCrust*.65);
-      float exposed=patch*(.18+.62*oreVein);
+      float exposurePatch=smoothstep(.58,.73,n)*(1.-oreCrust*.65);
+      float exposed=exposurePatch*(.18+.62*oreVein);
       float glint=smoothstep(.80,.96,grain)*oreLuster*exposed;
       vec3 stone=oreBaseColor*(.61+n*.60+(grain-.5)*.22+(micro-.5)*.08);
       if(oreFamily < .5) stone=mix(stone,oreBaseColor*.57,smoothstep(.61,.77,weather)*.25);
-      else if(oreFamily < 1.5) stone=mix(stone,oreVeinColor*(.64+grain*.32),smoothstep(.53,.75,grain)*patch*.70);
+      else if(oreFamily < 1.5) stone=mix(stone,oreVeinColor*(.64+grain*.32),smoothstep(.53,.75,grain)*exposurePatch*.70);
       else if(oreFamily < 2.5) stone=mix(stone,oreCoreColor*.57,smoothstep(.55,.72,weather)*.29);
       else if(oreFamily < 3.5) stone*=.77+grain*.28;
       else stone=mix(stone,oreVeinColor*.51,smoothstep(.49,.76,weather)*.30);
