@@ -1,4 +1,4 @@
-import { MARK_WIDTH, MARK_HEIGHT, oreMaterialOf, mineralHeritage } from './forge.js?v=6';
+import { MARK_WIDTH, MARK_HEIGHT, oreMaterialOf, mineralHeritage } from './forge.js?v=7';
 
 const T = globalThis.THREE;
 const metalId = { raw: 0, silver: 1, pearl: 2, gunmetal: 3, obsidian: 4 };
@@ -327,7 +327,7 @@ export function makeBladeMaterial(original, uniforms, raw) {
 const oreUniformHead = `
 uniform float oreSeed, oreReveal, oreGrade, oreHeat, oreFamily, oreMaterial;
 uniform float oreVein, oreFlaw, oreLuster, oreDensity, oreCrust, oreRoughness, oreMetalness;
-uniform float orePurity, oreWindow, oreLamp, oreExposure, oreClarity;
+uniform float orePurity, oreWindow, oreLamp, oreExposure, oreClarity, oreSide, oreScan, oreTransmission;
 uniform vec3 oreTint, oreBaseColor, oreVeinColor, oreCoreColor, oreHostVein;
 `;
 
@@ -335,13 +335,13 @@ export function makeOreMaterial(original, uniforms, family = 'river') {
   const material = new T.MeshStandardMaterial({
     color: 0xffffff, roughness: .86, metalness: .13, envMapIntensity: .8,
   });
-  material.customProgramCacheKey = () => 'bladelab-mineral-optical-shell-7';
+  material.customProgramCacheKey = () => 'bladelab-mineral-inspection-shell-8';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = 'varying vec3 vOre;\n' +
-      shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvOre = position;');
+    shader.vertexShader = 'varying vec3 vOre; varying vec3 vOreView;\n' +
+      shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvOre = position; vOreView=(modelViewMatrix*vec4(transformed,1.)).xyz;');
     shader.fragmentShader = fragmentHead.slice(fragmentHead.indexOf('float forgeHash')) + geology + oreUniformHead +
-      'varying vec3 vOre;\n' + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      'varying vec3 vOre; varying vec3 vOreView;\n' + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       vec3 p = vOre;
       vec3 v=p+vec3(oreSeed*7.,oreSeed*3.,oreMaterial*.29);
       float n=mineralNoise3(v*4.7)*.72+mineralNoise3(v*11.3)*.28;
@@ -375,17 +375,32 @@ export function makeOreMaterial(original, uniforms, family = 'river') {
       float windowMilk=(1.-oreClarity)*smoothstep(.28,.77,weather);
       polished=mix(polished,mix(oreCoreColor,vec3(.55),.45),windowMilk*.56);
       stone=mix(stone,polished,window);
+      // Inspection reveals existing topography under a visible grazing sweep.
+      float scanBand=exp(-pow((vOreView.x-mix(-1.05,.25,oreScan))/.38,2.));
+      float sideReveal=oreSide*(.38+.62*scanBand);
+      float fissure=(1.-smoothstep(.006,.024,abs(weather-.49)))*smoothstep(.30,.61,n)*(.2+oreFlaw*.8);
+      float ridge=(1.-smoothstep(.024,.055,abs(weather-.49)))-fissure*.45;
+      stone*=1.-fissure*sideReveal*.78;
+      stone=mix(stone,oreHostVein*(.65+grain*.38),max(0.,ridge)*sideReveal*.16);
+      float lampDistance=length((vOreView.xy-vec2(.16,.09))*vec2(1.,1.08));
+      float lampBeam=1.-smoothstep(.35,.66,lampDistance);
+      float lampCore=exp(-pow(lampDistance/.22,2.));
+      float lampHalo=exp(-pow((lampDistance-.30)/.20,2.));
+      float scatter=oreTransmission*(.55+.45*weather);
+      stone=mix(stone,oreCoreColor*(.65+.35*n),oreLamp*lampBeam*scatter*.32);
       diffuseColor.rgb=stone;
       float oreM=mix(clamp(oreMetalness+exposed*.33+glint*.20,.06,.65),mix(.19,.12,oreClarity),window);
       float oreR=mix(clamp(oreRoughness+pore*.07-exposed*.28-glint*.18,.35,.98),mix(.47,.12,oreClarity),window);
+      oreR=clamp(oreR-oreLamp*lampBeam*.12,.18,.98);
       float rockHeight=((micro-.5)*.00045+(grain-.5)*.004-crack*.005-pore*.003)*(1.-window*.92);
+      rockHeight+=sideReveal*((grain-.5)*.014-fissure*.025);
     `).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = oreR;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = oreM;')
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = rockBump(normal,rockHeight,vViewPosition);')
       .replace('#include <emissivemap_fragment>', `
-        float translucent = (.018+oreClarity*.15)*(oreExposure*.65+oreWindow*.48+(1.-oreCrust)*.10);
-        float lampSpot = exp(-length(p.xy-vec2(.1,.04))*4.6) * smoothstep(.03,.45,p.z);
-        totalEmissiveRadiance += oreCoreColor*oreLamp*lampSpot*(.12+oreVein*.26)*translucent*3.
+        totalEmissiveRadiance += oreCoreColor*oreLamp*scatter*(lampBeam*.52+lampHalo*.34)
+          + vec3(1.,.94,.76)*oreLamp*lampCore*.46
+          + oreHostVein*oreSide*scanBand*.045
           + vec3(.91,.15,.022)*oreHeat*oreHeat*(.08+crack*.27);
       `);
   };
