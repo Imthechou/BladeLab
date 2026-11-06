@@ -1,10 +1,10 @@
 import {
   STORAGE_KEY, WINDOW_PRICE, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, RARE_ODDS, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, fractureRisk, strike, finishForge,
-  fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage,
-} from './forge.js?v=6';
-import { ForgeStage } from './stage.js?v=6';
-import { ForgeSound } from './sound.js?v=6';
+  fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
+} from './forge.js?v=7';
+import { ForgeStage } from './stage.js?v=7';
+import { ForgeSound } from './sound.js?v=7';
 import { createQaSession } from './qa.js?v=2.1';
 
 const get = id => document.getElementById(id);
@@ -168,10 +168,13 @@ function render() {
 
 function renderTools(run,ore) {
   get('ore-tools').hidden=run.phase!=='ore';
+  stageBox.dataset.inspection=run.phase==='ore' ? inspectionMode : 'natural';
   if(run.phase!=='ore')return;
   const key=run.seed+'|'+ore.id;
   if(toolStone!==key){inspectionMode='natural';toolStone=key;}
-  get('inspection-note').textContent=inspectionMode==='side' ? '斜光下看裂隙和颗粒' : inspectionMode==='lamp' ? '看亮点；晶矿会透出微光' : ore.window ? '小窗只是局部，内部仍有未知' : '转动原石，寻找露脉与石皮';
+  stageBox.dataset.inspection=inspectionMode;
+  const checked=oreInspection(ore);
+  get('inspection-note').textContent=inspectionMode==='side' ? '侧光 · '+checked.side : inspectionMode==='lamp' ? '打灯 · '+checked.lamp : ore.window ? '小窗只是局部，内部仍有未知' : '转动原石，寻找露脉与石皮';
   document.querySelectorAll('[data-action="inspect-light"]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.id===inspectionMode)));
   const windowButton=get('window-ore');
   windowButton.disabled=ore.window || save.credits<ore.price+WINDOW_PRICE;

@@ -52,8 +52,10 @@ try {
   const freeBalance=Number(await page.locator('#credits').innerText());
   await page.locator('[data-action="inspect-light"][data-id="side"]').click();
   assert.equal(await page.locator('[data-id="side"]').getAttribute('aria-pressed'),'true');
+  await page.waitForTimeout(1000);
   await image('01d-side-light');
   await page.locator('[data-action="inspect-light"][data-id="lamp"]').click();
+  await page.waitForTimeout(350);
   await image('01e-mineral-lamp');
   await page.locator('[data-action="tap-ore"]').click();
   assert.ok((await page.locator('#inspection-note').innerText()).includes('叩声'));

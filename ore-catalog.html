@@ -35,12 +35,12 @@ aside{font-size:11px;color:#918f87;margin:16px 0 2px}
 <section><h2>开料 / 观察</h2><div class="controls" id="grading"></div><div id="info"></div></section>
 <aside>本页为美术验收工具，素材与实际锻造使用相同的 GLB、Shader 和切面代码。保存的成刀不受此页面影响。</aside>
 <script type="module">
-import { FAMILIES, ORE_VARIANTS, ORE_MATERIALS, ORE_TINTS, ORE_EXPOSURES, oreOptics, oreMaterialOf, oreSignals, freshRun } from './forge.js?v=6';
-import { ForgeStage } from './stage.js?v=6';
+import { FAMILIES, ORE_VARIANTS, ORE_MATERIALS, ORE_TINTS, ORE_EXPOSURES, oreOptics, oreMaterialOf, oreSignals, freshRun } from './forge.js?v=7';
+import { ForgeStage } from './stage.js?v=7';
 const stage = new ForgeStage(document.getElementById('ore-canvas'));
 const run = freshRun(99);
 let family='river',variant=0,material='river_gray',grade=2,open=false;
-let tint='natural',exposure='open',clarity=58;
+let tint='natural',exposure='open',clarity=58,inspection='natural';
 const el=id=>document.getElementById(id);
 const node=(action,id,title,pressed=false)=>`<button data-action="${action}" data-id="${id}" type="button" aria-pressed="${pressed}">${title}</button>`;
 let startX=0,startY=0;
@@ -54,14 +54,14 @@ const obj={id:7,family,variant,material,tint:tint==='natural'?undefined:tint,exp
  purity:grade===2?88:grade===1?70:49,stability:grade===2?78:grade===1?61:44,clue:1,tier:2,price:32,number:'08'};
 const rock=oreMaterialOf(obj),signs=oreSignals(obj),optical=oreOptics(obj);
 run.phase=open?'reveal':'ore';run.ore=open?obj:null;
-stage.sync(run,obj,null);
+stage.sync(run,obj,null);if(!open)stage.setInspection(inspection);
 el('families').innerHTML=FAMILIES.map(f=>node('family',f.id,f.name,f.id===family)).join('');
 el('variants').innerHTML=ORE_VARIANTS.map((v,i)=>node('variant',i,v,i===variant)).join('');
 el('materials').innerHTML=ORE_MATERIALS.map(m=>`<button data-action="material" data-id="${m.id}" aria-pressed="${m.id===material}">
 <i style="--m1:${m.base};--m2:${m.vein}"></i><span>${m.name}</span></button>`).join('');
 el('tints').innerHTML=node('tint','natural','原矿底色',tint==='natural')+ORE_TINTS.map(t=>`<button data-action="tint" data-id="${t.id}" aria-pressed="${t.id===tint}"><i style="--m1:${t.core};--m2:${t.steel}"></i><span>${t.name}</span></button>`).join('');
 el('optics').innerHTML=ORE_EXPOSURES.map(e=>node('exposure',e.id,e.name,e.id===exposure)).join('')+[15,55,90].map(c=>node('clarity',c,c<35?'浑浊':c<70?'雾润':'清透',c===clarity)).join('');
-el('grading').innerHTML=node('toggle','',open?'合上原石':'切开检视',open)+node('steel','','同源刀身',stage.previewSteel)+[0,1,2].map(g=>node('grade',g,['普通','良质','稀质'][g],g===grade)).join('');
+el('grading').innerHTML=['natural','side','lamp'].map((id,i)=>node('inspection',id,['自然光','侧光检视','打灯检视'][i],!open && inspection===id)).join('')+node('toggle','',open?'合上原石':'切开检视',open)+node('steel','','同源刀身',stage.previewSteel)+[0,1,2].map(g=>node('grade',g,['普通','良质','稀质'][g],g===grade)).join('');
 el('info').innerHTML=`<span>材质：${rock.name}</span><span>造型：${ORE_VARIANTS[variant]}</span>`+
  `<span>矿脉：${signs.vein}</span><span>裂隙：${signs.shell}</span><span>亮点：${signs.glow}</span>`+
  `<span>密实：${signs.density}</span><span>石皮：${signs.crust}</span><span>底色：${optical.name}</span><span>透澈：${optical.clarityName}</span>`;
@@ -75,6 +75,7 @@ switch(b.dataset.action){
  case 'tint':tint=b.dataset.id;break;
  case 'exposure':exposure=b.dataset.id;break;
  case 'clarity':clarity=Number(b.dataset.id);break;
+ case 'inspection':inspection=b.dataset.id;open=false;stage.previewSteel=false;break;
  case 'grade':grade=Number(b.dataset.id);break;
  case 'steel':open=true;select();if(!stage.previewSteel)stage.toggleMineralPreview();return;
  case 'toggle':open=!open;stage.previewSteel=false;break;

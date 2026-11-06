@@ -14,6 +14,7 @@ on:
       - "styles.css"
       - "test/**"
       - "scripts/qa-ore.mjs"
+      - "scripts/qa-ore-inspection.mjs"
       - "scripts/qa-ore-catalog.mjs"
       - "scripts/qa-ore-preview.mjs"
       - "ore-catalog.html"
@@ -66,4 +67,43 @@ jobs:
           name: bladelab-ore-mobile-screens
           path: artifacts/ore-mobile
           if-no-files-found: ignore
+          retention-days: 7
+
+  inspection-visual:
+    name: Visible side-light and flashlight inspection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests
+        run: npm test
+      - name: Install Chromium
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Start game
+        run: |
+          npm start > /tmp/bladelab-inspection.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl --silent --fail http://127.0.0.1:8217/ > /dev/null; then exit 0; fi
+            sleep 0.25
+          done
+          cat /tmp/bladelab-inspection.log
+          exit 1
+      - name: Five-family rendered-pixel inspection checks
+        run: node scripts/qa-ore-inspection.mjs
+      - name: Published inspection buttons and optical response
+        env:
+          QA_ORIGIN: https://imthechou.github.io/BladeLab/preview/ore-v5/
+          QA_QUICK: '1'
+          QA_OUTPUT: artifacts/ore-inspection/live
+        run: node scripts/qa-ore-inspection.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bladelab-inspection-visual
+          path: artifacts/ore-inspection
           retention-days: 7
