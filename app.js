@@ -1,5 +1,5 @@
 import {
-  STORAGE_KEY, WINDOW_PRICE, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, ORE_VARIANTS, RARE_ODDS, oreSignals, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
+  STORAGE_KEY, WINDOW_PRICE, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, RARE_ODDS, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage,
 } from './forge.js?v=5';
@@ -19,7 +19,6 @@ const qa = createQaSession(new URLSearchParams(location.search).get('qa'));
 const stepNames = ['选料', '精炼', '锻打', '装配', '鉴定'];
 const stationNames = ['原石检视台', '精炼炉口', '锻造铁砧', '装配工作台', '成刀展台'];
 const roman = ['', ' I', ' II', ' III'];
-const clues = ['隐脉', '浅脉', '显脉'];
 const fmt = p => (p * 100).toFixed(p === 0 ? 0 : 1) + '%';
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 let save = restore();
@@ -385,7 +384,7 @@ document.addEventListener('click', event => {
     echo.classList.remove('is-echoing');void echo.offsetWidth;echo.classList.add('is-echoing');
     echo.style.setProperty('--ring',(.35+stone.density/100)+'s');
     get('inspection-note').textContent=stone.density>=70 ? '叩声清亮 · 余音较长' : stone.density<49 ? '叩声低闷 · 余音短' : '叩声偏实 · 回音适中';
-    clearTimeout(echoTimer);echoTimer=setTimeout(()=>{echo.classList.remove('is-echoing');renderTools(run,stone);},1500);return;
+    clearTimeout(echoTimer);echoTimer=setTimeout(()=>{echo.classList.remove('is-echoing');if(save.run.phase==='ore')renderTools(save.run,offers(save.run)[save.run.selected]);},1500);return;
   } else if(action==='window-ore' && inspectOre(save)){
     inspectionMode='window';stage?.setInspection('window');
     sound.play('polish',.75);

@@ -1,4 +1,4 @@
-import { MARK_WIDTH, MARK_HEIGHT, familyOf, oreMaterialOf, mineralHeritage } from './forge.js?v=5';
+import { MARK_WIDTH, MARK_HEIGHT, oreMaterialOf, mineralHeritage } from './forge.js?v=5';
 
 const T = globalThis.THREE;
 const metalId = { raw: 0, silver: 1, pearl: 2, gunmetal: 3, obsidian: 4 };
@@ -108,36 +108,57 @@ float forgeBand(float x, float width) {
 // Shared object-space geology: shell windows and both cut faces sample exactly
 // the same deposit. The blade stretches this field along its own length.
 const geology = `
-vec4 mineralField(vec3 p, float family, float style, float seed) {
-  vec2 q = p.yz + vec2(p.x*.29, p.x*.17);
-  float n = forgeNoise(q*5.3 + seed*13.);
-  float fine = forgeNoise(q*29. + seed*23.);
-  float warp = forgeNoise(q*3.8 + seed*7.);
-  float line = q.x*(10.+mod(style,3.)*2.) + sin(q.y*4.6+seed*9.)*.52 + warp*.65;
-  float seam = forgeBand(line,.12);
-  float facets = n;
-  if (family > .5 && family < 1.5) {
-    vec2 c = vec2(q.x*8.+q.y*4.3, q.y*9.-q.x*2.4);
-    c += vec2(warp*.64,n*.51);
-    vec2 cell = floor(c);
-    facets = forgeHash(cell+seed*31.);
-    vec2 e = abs(fract(c)-.5);
-    seam = 1.-smoothstep(.41,.48,max(e.x,e.y));
-    seam = mix(.17,.91,facets)*seam;
-  } else if (family > 1.5 && family < 2.5) {
-    seam = forgeBand(q.x*7. + sin(q.y*7.+seed*12.)*.66 + warp*1.4,.095);
-    seam *= smoothstep(.25,.55,n);
-  } else if (family > 2.5 && family < 3.5) {
-    float a = forgeBand(q.x*13.+q.y*6.+warp*.18,.07);
-    float b = forgeBand(q.x*7.-q.y*12.+seed*5.,.055);
-    seam = max(a,b*.80);
-    facets = forgeNoise(q*19.+seed*31.);
-  } else if (family > 3.5) {
-    line = length((q+vec2(.28,-.17))*vec2(1.,.65))*20.+warp*.63+style*.3;
-    seam = forgeBand(line,.16);
+float mineralHash3(vec3 p) {
+  p=fract(p*.1031);p+=dot(p,p.yzx+31.32);return fract((p.x+p.y)*p.z);
+}
+float mineralNoise3(vec3 p) {
+  vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+  return mix(mix(mix(mineralHash3(i),mineralHash3(i+vec3(1,0,0)),f.x),
+    mix(mineralHash3(i+vec3(0,1,0)),mineralHash3(i+vec3(1,1,0)),f.x),f.y),
+    mix(mix(mineralHash3(i+vec3(0,0,1)),mineralHash3(i+vec3(1,0,1)),f.x),
+    mix(mineralHash3(i+vec3(0,1,1)),mineralHash3(i+vec3(1,1,1)),f.x),f.y),f.z);
+}
+vec3 mineralCells(vec2 q, float seed) {
+  vec2 cell=floor(q),f=fract(q);
+  float near=9.,second=9.,shade=0.;
+  for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){
+    vec2 b=vec2(float(x),float(y));
+    vec2 jitter=vec2(forgeHash(cell+b+seed),forgeHash(cell+b+seed+19.3));
+    vec2 d=b+jitter-f;float dist=dot(d,d);
+    if(dist<near){second=near;near=dist;shade=forgeHash(cell+b+seed+8.7);}
+    else second=min(second,dist);
   }
-  float fracture = forgeBand(q.x*6. + q.y*1.8 + warp*1.7 + seed*4.,.027);
-  fracture *= smoothstep(.31,.68,n);
+  return vec3(sqrt(near),sqrt(second)-sqrt(near),shade);
+}
+vec4 mineralField(vec3 p, float family, float style, float seed) {
+  vec3 v=p+vec3(seed*7.,seed*3.,style*.29);
+  float n=mineralNoise3(v*4.7)*.72+mineralNoise3(v*11.3)*.28;
+  float fine=mineralNoise3(v*49.);
+  float warp=mineralNoise3(v*3.1);
+  vec2 q=p.yz;
+  float seam=0.,facets=n;
+  if(family < .5){
+    float layers=q.x*(4.7+mod(style,3.)*.9)+q.y*.65+warp*1.45;
+    seam=forgeBand(layers,.14)*smoothstep(.30,.60,n);
+    facets=.30+.70*warp;
+  }else if(family < 1.5){
+    vec3 cell=mineralCells(q*(6.3+style*.4)+vec2(warp*.31,n*.19),seed*17.);
+    facets=cell.z;
+    seam=smoothstep(.015,.09,cell.y)*(.23+.77*cell.z);
+  }else if(family < 2.5){
+    seam=(1.-smoothstep(.025,.10,abs(n-.51)))*smoothstep(.28,.56,warp);
+    facets=mineralNoise3(v*15.);
+  }else if(family < 3.5){
+    float a=forgeBand(q.x*8.+q.y*3.5+warp*.27,.10)*smoothstep(.35,.58,n);
+    float b=forgeBand(q.x*4.-q.y*6.2+seed*2.,.07)*smoothstep(.53,.74,warp);
+    seam=max(a,b*.62);facets=mineralNoise3(v*21.);
+  }else{
+    float layers=q.x*(5.2+mod(style,3.)*.65)+q.y*.55+warp*1.18;
+    seam=forgeBand(layers,.21)*(.30+.70*n);
+    facets=.3+.7*mineralNoise3(v*8.);
+  }
+  // Sparse irregular fracture edges, with gaps. Avoid a periodic dotted network.
+  float fracture=(1.-smoothstep(.012,.034,abs(warp-.49)))*smoothstep(.45,.65,n);
   return vec4(seam,facets,fine,fracture);
 }
 vec3 rockBump(vec3 n, float height, vec3 viewP) {
@@ -176,14 +197,15 @@ forgeRough += (1.-fPurity)*slag*.14;
 // A durable mineral fingerprint remains underneath every forged finish.
 vec4 sourceField = mineralField(vec3(0.,st.y*.84-.42,st.x*1.42-.71),fOreFamily,fOreStyle,fOreSeed);
 float inheritedGrain = sourceField.x * (.45+.55*fOreTrace);
-steel = mix(steel,steel*(.57+fOreTone*.95),.40);
-vec3 sourceLight = mix(vec3(.59,.64,.67),fOreTone,.55);
-if(fOreFamily < .5) steel = mix(steel,steel*.50,inheritedGrain*.64);
-else if(fOreFamily < 1.5) steel = mix(steel,sourceLight*(.56+sourceField.y*.49),.37+inheritedGrain*.17);
-else if(fOreFamily < 2.5) steel = mix(steel*.87,fOreTone*(.82+.16*sourceField.z),inheritedGrain*.65);
-else if(fOreFamily < 3.5) steel = mix(steel*.86,sourceLight,inheritedGrain*.52);
-else steel = mix(steel,sourceLight,inheritedGrain*.44);
-forgeRough += inheritedGrain*.09 + (sourceField.z-.5)*.025;
+vec3 sourceBase = fOreTone*(.72+coarse*.18);
+steel = mix(steel,sourceBase,.58);
+vec3 sourceLight = mix(vec3(.59,.64,.67),fOreTone,.66);
+if(fOreFamily < .5) steel = mix(steel,steel*.34,inheritedGrain*.80);
+else if(fOreFamily < 1.5) steel = mix(steel,sourceLight*(.36+sourceField.y*.70),.46+inheritedGrain*.18);
+else if(fOreFamily < 2.5) steel = mix(steel*.54,fOreTone*(.92+.18*sourceField.z),inheritedGrain*.88);
+else if(fOreFamily < 3.5) steel = mix(steel*.65,sourceLight,inheritedGrain*.72);
+else steel = mix(steel*.79,sourceLight,inheritedGrain*.61);
+forgeRough += inheritedGrain*.10 + (sourceField.z-.5)*.025;
 float patternWeight = .56 + .12 * fLevels.y;
 float pat = 0.;
 float seam = 0.;
@@ -284,7 +306,7 @@ export function makeBladeMaterial(original, uniforms, raw) {
     envMapIntensity: 1.22,
   });
   material.userData.forge = uniforms;
-  material.customProgramCacheKey = () => 'blade-lab-mineral-heritage-5';
+  material.customProgramCacheKey = () => 'blade-lab-mineral-heritage-6';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = vertexHead + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + vertexBody);
@@ -309,7 +331,7 @@ export function makeOreMaterial(original, uniforms, family = 'river') {
   const material = new T.MeshStandardMaterial({
     color: 0xffffff, roughness: .86, metalness: .13, envMapIntensity: .8,
   });
-  material.customProgramCacheKey = () => 'bladelab-geological-shell-5';
+  material.customProgramCacheKey = () => 'bladelab-geological-shell-6';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = 'varying vec3 vOre;\n' +
@@ -317,27 +339,37 @@ export function makeOreMaterial(original, uniforms, family = 'river') {
     shader.fragmentShader = fragmentHead.slice(fragmentHead.indexOf('float forgeHash')) + geology + oreUniformHead +
       'varying vec3 vOre;\n' + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       vec3 p = vOre;
-      vec4 deposit = mineralField(p,oreFamily,oreMaterial,oreSeed);
-      float n = forgeNoise(p.xy*6.3+p.z*2.7+oreSeed*17.);
-      float micro = forgeNoise(p.xy*65.+p.z*23.+oreSeed*27.);
-      float pore = smoothstep(.63,.86,deposit.z)*(1.-oreDensity*.72);
-      float crack = deposit.w * (.20+oreFlaw*.8);
-      float exposed = deposit.x * smoothstep(.38,.72,n) * (.19+.55*oreVein)*(1.-oreCrust*.56);
-      float glint = smoothstep(.84,.98,deposit.z) * (.24+.76*oreLuster) * exposed;
-      vec3 stone = oreBaseColor * (.72+n*.44+(micro-.5)*.10);
-      if(oreFamily > 1.5 && oreFamily < 2.5) stone *= 1.-pore*.29;
-      if(oreFamily > 3.5) stone = mix(stone,oreVeinColor*.62,deposit.x*.23);
-      stone = mix(stone,oreVeinColor*(.70+.35*deposit.y),exposed);
-      stone *= 1.-crack*.67;
-      float window = (1.-smoothstep(.17,.235,length((p.xy-vec2(.12,.08))*vec2(1.,1.15)))) * smoothstep(.15,.35,p.z) * oreWindow;
-      float presence = smoothstep(.74-orePurity*.50,.91-orePurity*.45,forgeNoise(p.yz*6.3+p.x*2.7+oreSeed*17.)*.67+deposit.x*.44);
-      vec3 polished = mix(oreBaseColor*.63,oreCoreColor*(.62+.40*deposit.y),presence);
-      polished = mix(polished,oreVeinColor*.88,deposit.x*.40);
-      stone = mix(stone,polished,window);
-      diffuseColor.rgb = stone;
-      float oreM = mix(clamp(oreMetalness+exposed*.38+glint*.17,.06,.65),.34,window);
-      float oreR = mix(clamp(oreRoughness+pore*.06-exposed*.29-glint*.19,.36,.97),.30,window);
-      float rockHeight = ((micro-.5)*.0024 + (deposit.z-.5)*.009 - crack*.018 - pore*.012) * (1.-window*.9);
+      vec3 v=p+vec3(oreSeed*7.,oreSeed*3.,oreMaterial*.29);
+      float n=mineralNoise3(v*4.7)*.72+mineralNoise3(v*11.3)*.28;
+      float grain=mineralNoise3(v*52.);
+      float micro=mineralNoise3(v*138.);
+      float weather=mineralNoise3(v*3.1);
+      float pore=smoothstep(.67,.86,grain)*(1.-oreDensity*.68);
+      float crack=(1.-smoothstep(.010,.031,abs(weather-.49)))*smoothstep(.46,.66,n)*oreFlaw;
+      // Mineral appears only in a few broken windows through the weathered host.
+      float patch=smoothstep(.58,.73,n)*(1.-oreCrust*.65);
+      float exposed=patch*(.18+.62*oreVein);
+      float glint=smoothstep(.80,.96,grain)*oreLuster*exposed;
+      vec3 stone=oreBaseColor*(.61+n*.60+(grain-.5)*.22+(micro-.5)*.08);
+      if(oreFamily < .5) stone=mix(stone,oreBaseColor*.57,smoothstep(.61,.77,weather)*.25);
+      else if(oreFamily < 1.5) stone=mix(stone,oreVeinColor*(.64+grain*.32),smoothstep(.53,.75,grain)*patch*.70);
+      else if(oreFamily < 2.5) stone=mix(stone,oreCoreColor*.57,smoothstep(.55,.72,weather)*.29);
+      else if(oreFamily < 3.5) stone*=.77+grain*.28;
+      else stone=mix(stone,oreVeinColor*.51,smoothstep(.49,.76,weather)*.30);
+      stone=mix(stone,oreVeinColor*(.70+grain*.31),exposed*.68);
+      stone*=1.-crack*.51-pore*.17;
+      float window=(1.-smoothstep(.17,.235,length((p.xy-vec2(.12,.08))*vec2(1.,1.15))))*smoothstep(.15,.35,p.z)*oreWindow;
+      float presence=smoothstep(.74-orePurity*.50,.91-orePurity*.45,n);
+      // The extra field is evaluated only for an actual scraped window.
+      vec4 deposit=vec4(0.,n,grain,0.);
+      if(oreWindow>.5)deposit=mineralField(p,oreFamily,oreMaterial,oreSeed);
+      vec3 polished=mix(oreBaseColor*.63,oreCoreColor*(.60+.46*deposit.y),presence);
+      polished=mix(polished,oreVeinColor*.88,deposit.x*.37);
+      stone=mix(stone,polished,window);
+      diffuseColor.rgb=stone;
+      float oreM=mix(clamp(oreMetalness+exposed*.33+glint*.20,.06,.65),.33,window);
+      float oreR=mix(clamp(oreRoughness+pore*.07-exposed*.28-glint*.18,.35,.98),.31,window);
+      float rockHeight=((micro-.5)*.00045+(grain-.5)*.004-crack*.005-pore*.003)*(1.-window*.92);
     `).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = oreR;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = oreM;')
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = rockBump(normal,rockHeight,vViewPosition);')
@@ -357,12 +389,12 @@ export function makeMeltMaterial(uniforms) {
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = 'varying vec3 vMelt;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvMelt = position;');
-    shader.fragmentShader = `uniform float meltClock, meltHeat, meltClean;
+    shader.fragmentShader = `uniform float meltClock, meltHeat, meltClean, meltSeed;
       uniform vec3 meltTint;
       varying vec3 vMelt;
     ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       vec3 p = vMelt;
-      float flow = sin(p.y*18.+sin(p.x*13.+meltClock*2.)*1.55+sin(p.z*21.-meltClock*1.7)*1.18);
+      float flow = sin(p.y*18.+meltSeed*7.+sin(p.x*13.+meltClock*2.)*1.55+sin(p.z*21.-meltClock*1.7)*1.18);
       float currents = sin(p.x*31.+sin(p.z*12.+p.y*7.)*2.4+meltClock*.65) * .32 + flow*.68;
       float dross = smoothstep(.04,.77,currents) * (1.-meltClean*.92);
       float crust = smoothstep(.56,.94,sin(p.x*53.+p.y*29.)*sin(p.z*41.-p.y*37.));
@@ -377,39 +409,39 @@ export function makeCutMaterial(uniforms) {
   const material = new T.MeshStandardMaterial({
     color: 0xffffff, roughness: .37, metalness: .35, envMapIntensity: 1.05, side: T.DoubleSide,
   });
-  material.customProgramCacheKey = () => 'bladelab-matched-mineral-section-6';
+  material.customProgramCacheKey = () => 'bladelab-matched-mineral-section-7';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.fragmentShader = fragmentHead.slice(fragmentHead.indexOf('float forgeHash')) + geology + oreUniformHead + `
       varying vec3 vSection;
       varying float vCutRim;
     ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-      vec3 p = vSection;
-      vec4 deposit = mineralField(p,oreFamily,oreMaterial,oreSeed);
-      float quality = clamp(oreGrade*.5,0.,1.);
-      float n = forgeNoise(p.yz*6.3+p.x*2.7+oreSeed*17.);
-      float cloud = forgeNoise(p.yz*3.2+oreSeed*7.);
-      float presence = smoothstep(.76-orePurity*.55,.94-orePurity*.49,n*.67+deposit.x*.44);
-      presence = clamp(presence*(.43+quality*.53)+deposit.x*(.18+quality*.22),0.,1.);
-      vec3 matrixRock = oreBaseColor*(.48+.34*n+.10*deposit.z);
-      vec3 mineral = oreCoreColor*(.61+.40*deposit.y);
-      if(oreFamily < .5) mineral = mix(mineral*.64,oreVeinColor,deposit.x*.76);
-      else if(oreFamily < 1.5) mineral = mix(oreCoreColor*.52,oreVeinColor,.18+deposit.y*.71);
-      else if(oreFamily < 2.5) mineral = mix(oreCoreColor*.52,oreCoreColor*1.12,deposit.x*.78+cloud*.17);
-      else if(oreFamily < 3.5) mineral = mix(mineral*.69,oreVeinColor*.96,deposit.x*.76);
-      else mineral = mix(oreCoreColor*.63,oreVeinColor,deposit.x*.65);
-      vec3 core = mix(matrixRock,mineral,presence);
-      // Clean saw marks remain subtle and antialiased. No emissive disc or rim glow.
-      float saw = sin(p.z*780.+p.y*.8)*(1.-smoothstep(.8,3.0,fwidth(p.z*780.)));
-      core *= .985+saw*.012;
-      float flaws = deposit.w*oreFlaw*(1.-orePurity)*.62;
-      core *= 1.-flaws;
-      float rim = smoothstep(.06,.96,vCutRim);
-      core = mix(core,oreBaseColor*(.40+.19*n),rim);
-      diffuseColor.rgb = core;
-      float cutMetal = mix(.18+presence*.40+deposit.x*.12,.08,rim);
-      float cutRough = mix(.64-presence*.28-quality*.075+flaws*.2,.91,rim);
-      float cutHeight = (deposit.z-.5)*.0009+flaws*.003+rim*.002;
+      vec3 p=vSection;
+      vec4 deposit=mineralField(p,oreFamily,oreMaterial,oreSeed);
+      vec3 v=p+vec3(oreSeed*7.,oreSeed*3.,oreMaterial*.29);
+      float quality=clamp(oreGrade*.5,0.,1.);
+      float n=mineralNoise3(v*4.7)*.72+mineralNoise3(v*11.3)*.28;
+      float cloud=mineralNoise3(v*3.1);
+      float presence=smoothstep(.73-orePurity*.47,.89-orePurity*.43,n);
+      presence=clamp(presence*(.36+quality*.55)+deposit.x*(.13+quality*.20),0.,1.);
+      vec3 matrixRock=oreBaseColor*(.48+.39*n+.12*deposit.z);
+      vec3 mineral=oreCoreColor*(.59+.43*deposit.y);
+      if(oreFamily < .5) mineral=mix(mineral*.69,oreVeinColor,deposit.x*.66);
+      else if(oreFamily < 1.5) mineral=mix(oreCoreColor*.44,oreVeinColor,.12+deposit.y*.78);
+      else if(oreFamily < 2.5) mineral=mix(oreCoreColor*.43,oreCoreColor*1.10,deposit.x*.81+cloud*.14);
+      else if(oreFamily < 3.5) mineral=mix(mineral*.67,oreVeinColor*.95,deposit.x*.79);
+      else mineral=mix(oreCoreColor*.58,oreVeinColor,deposit.x*.58);
+      vec3 core=mix(matrixRock,mineral,presence);
+      float saw=sin(p.z*780.+p.y*.8)*(1.-smoothstep(.8,3.0,fwidth(p.z*780.)));
+      core*=.985+saw*.009;
+      float flaws=deposit.w*oreFlaw*(1.-orePurity)*.45;
+      core*=1.-flaws;
+      float rim=smoothstep(.06,.96,vCutRim);
+      core=mix(core,oreBaseColor*(.40+.19*n),rim);
+      diffuseColor.rgb=core;
+      float cutMetal=mix(.16+presence*.39+deposit.x*.11,.08,rim);
+      float cutRough=mix(.65-presence*.28-quality*.07+flaws*.2,.91,rim);
+      float cutHeight=(deposit.z-.5)*.0004+flaws*.001+rim*.001;
     `).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = cutRough;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = cutMetal;')
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = rockBump(normal,cutHeight,vViewPosition);');

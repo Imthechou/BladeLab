@@ -3,6 +3,8 @@ import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 const output = 'artifacts/ore-mobile';
+const origin = process.env.QA_ORIGIN || 'http://127.0.0.1:8217/';
+const storageKey=process.env.QA_STORAGE_KEY || 'bladelab.forge.1';
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({
   headless: true,
@@ -21,7 +23,7 @@ const image = name => page.screenshot({ path: `${output}/${name}.png`, animation
 const step = () => page.locator('#stage').getAttribute('data-mode');
 const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 try {
-  await page.goto('http://127.0.0.1:8217/?v=3', { waitUntil: 'load' });
+  await page.goto(origin+'?v=5', { waitUntil: 'load' });
   await page.waitForSelector('.ore-grid .ore-card');
   await page.waitForFunction(()=>[...document.querySelectorAll('.ore-thumbnail img')].every(img=>img.naturalWidth>0));
   await page.waitForTimeout(600);
@@ -29,6 +31,14 @@ try {
   assert.equal(await page.locator('.ore-card').count(), 3);
   assert.ok((await overflow()) <= 2, 'selection causes horizontal overflow');
   await image('01-inspect-390');
+  for(const size of [{width:320,height:740},{width:1280,height:900}]){
+    await page.setViewportSize(size);await page.waitForTimeout(200);
+    assert.ok((await overflow())<=2,'inspection overflow '+size.width);
+    const button=await page.locator('[data-action="buy"]').boundingBox();
+    assert.ok(button && button.x>=0 && button.x+button.width<=size.width+1);
+    await image('01-layout-'+size.width);
+  }
+  await page.setViewportSize({width:390,height:844});
   await page.locator('.ore-card').nth(1).click();
   await page.waitForTimeout(240);
   await page.evaluate(() => scrollTo(0,0));
@@ -76,7 +86,7 @@ try {
   await page.waitForTimeout(700);await image('03b-source-steel-375');
   await page.locator('[data-action="preview-mineral"]').click();
   assert.equal(await page.locator('[data-action="preview-mineral"]').getAttribute('aria-pressed'),'false');
-  const source=await page.evaluate(()=>JSON.parse(localStorage.getItem('bladelab.forge.1')).run.ore);
+  const source=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)).run.ore,storageKey);
   await page.locator('[data-action="to-refine"]').click();
   assert.equal(await step(), 'refine');
   await image('04-refining-375');
@@ -125,7 +135,7 @@ try {
   await page.locator('[data-action="appraise"]').click();
   assert.equal(await step(), 'appraise');
   await image('06-appraised-375');
-  const archived=await page.evaluate(()=>JSON.parse(localStorage.getItem('bladelab.forge.1')).collection[0]);
+  const archived=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)).collection[0],storageKey);
   assert.equal(archived.ore.material,source.material);assert.equal(archived.ore.figure,source.figure);
   assert.equal(archived.ore.window,true);
   await page.reload({waitUntil:'load'});await page.waitForTimeout(600);
@@ -136,7 +146,7 @@ try {
   const glStatus = await page.locator('#stage-state').innerText();
   assert.ok(!glStatus.includes('3D 暂不可用'), '3D did not initialize');
   assert.deepEqual(errors, [], 'browser/GLSL console errors');
-  console.log(JSON.stringify({ ok: true, viewports: ['390x844','375x812'], openedPrice: paid, finalCredits: await page.locator('#credits').innerText(), errors, screenshots: output }));
+  console.log(JSON.stringify({ ok: true, viewports: ['320x740','390x844','375x812','1280x900'], openedPrice: paid, finalCredits: await page.locator('#credits').innerText(), errors, screenshots: output }));
 } catch (error) {
   await image('99-failure').catch(() => {});
   console.error('Journey error:', error);

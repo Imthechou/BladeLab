@@ -42,7 +42,6 @@ export function buildOreGlb(family, variant=0) {
   const phase=fi*1.73+variant*.34;
   points=points.map(p=>{
     const [u,v,w]=p;
-    const angle=Math.atan2(w,u);
     const broad=Math.sin(u*3.4+v*1.7+phase)*Math.cos(w*3.1-v*.7-phase);
     let q=p.map(n=>signedPow(n,powers[fi]));
     let radius=1+.045*broad;

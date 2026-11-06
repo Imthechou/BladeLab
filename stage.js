@@ -256,7 +256,7 @@ export class ForgeStage {
       oreBaseColor: { value: new T.Color('#565b5c') }, oreVeinColor: { value: new T.Color('#9da9aa') },
       oreCoreColor: { value: new T.Color('#a6bfc5') }, oreWindow: { value: 0 }, oreLamp: { value: 0 },
     };
-    this.meltUniforms = { meltClock: { value: 0 }, meltHeat: { value: .65 }, meltClean: { value: 0 }, meltTint: { value: new T.Color() } };
+    this.meltUniforms = { meltClock: { value: 0 }, meltHeat: { value: .65 }, meltClean: { value: 0 }, meltTint: { value: new T.Color() }, meltSeed: { value: .5 } };
     this.inspection = 'natural';
     this.previewSteel = false;
     this.mode = 'ore';
@@ -435,7 +435,8 @@ export class ForgeStage {
       this.oreUniforms.oreCrust.value = (ore.crust ?? 50) / 100;
       this.stoneShape = ore.figure;
       this.stoneFamily = ore.family;
-      this.meltUniforms.meltTint.value.set(familyOf(ore.family).color);
+      this.meltUniforms.meltTint.value.set(rock.core);
+      this.meltUniforms.meltSeed.value=ore.figure ?? .5;
     }
     if (this.mode !== 'refine') this.oreUniforms.oreHeat.value = 0;
     this.prepareRun(run);
