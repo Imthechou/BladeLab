@@ -1,4 +1,4 @@
-import { MARK_WIDTH, MARK_HEIGHT, oreMaterialOf, mineralHeritage } from './forge.js?v=10';
+import { MARK_WIDTH, MARK_HEIGHT, oreMaterialOf, mineralHeritage } from './forge.js?v=11';
 
 const T = globalThis.THREE;
 const metalId = { raw: 0, silver: 1, pearl: 2, gunmetal: 3, obsidian: 4 };
@@ -402,11 +402,11 @@ export function makeOreMaterial(original, uniforms, family = 'river') {
 
 export function makeMeltMaterial(uniforms) {
   const material = new T.MeshStandardMaterial({ color: 0xff7730, roughness: .3, metalness: .62, envMapIntensity: .85 });
-  material.customProgramCacheKey = () => 'blade-lab-molten-2';
+  material.customProgramCacheKey = () => 'blade-lab-molten-failure-3';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = 'varying vec3 vMelt;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvMelt = position;');
-    shader.fragmentShader = `uniform float meltClock, meltHeat, meltClean, meltSeed;
+    shader.fragmentShader = `uniform float meltClock, meltHeat, meltClean, meltFailed, meltSeed;
       uniform vec3 meltTint;
       varying vec3 vMelt;
     ` + shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
@@ -417,7 +417,11 @@ export function makeMeltMaterial(uniforms) {
       float crust = smoothstep(.56,.94,sin(p.x*53.+p.y*29.)*sin(p.z*41.-p.y*37.));
       vec3 heat = mix(vec3(.23,.018,.005),vec3(.92,.29,.044),meltHeat);
       diffuseColor.rgb = mix(heat*(1.-dross*.91),meltTint,.09)*(1.-crust*dross*.47);
-    `).replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += vec3(1.,.18,.018) * meltHeat * (.19 + .98*(1.-dross));');
+      vec3 deadSlag = mix(vec3(.065,.073,.077),vec3(.19,.18,.16),smoothstep(-.8,.8,currents))*(.86+crust*.14);
+      diffuseColor.rgb = mix(diffuseColor.rgb,deadSlag,meltFailed);
+    `).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(.3,.93,meltFailed);')
+      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = mix(.62,.14,meltFailed);')
+      .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance += vec3(1.,.18,.018) * meltHeat * (.19 + .98*(1.-dross)) * (1.-meltFailed);');
   };
   return material;
 }

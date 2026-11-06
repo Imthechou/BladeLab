@@ -83,6 +83,7 @@ button, a { touch-action: manipulation; }
 .info-line, .risk-line { display: flex; justify-content: space-between; align-items: baseline; gap: 7px; }
 .readout-number, .risk-value { font-family: var(--mono); }
 .readout-number { color: var(--accent-bright); }
+.info-line > .readout-number { flex-shrink:0;white-space:nowrap; }
 .risk-value { font-size: 25px !important; color: var(--cool); }
 .risk-value.alert { color: var(--danger); }
 .risk-bar { height: 4px; border-radius: 10px; background: #37302a; overflow: hidden; }

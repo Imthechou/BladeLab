@@ -3,10 +3,10 @@ import {
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
-} from './forge.js?v=10';
-import { ForgeStage } from './stage.js?v=10';
-import { ForgeSound } from './sound.js?v=10';
-import { createQaSession } from './qa.js?v=10';
+} from './forge.js?v=11';
+import { ForgeStage } from './stage.js?v=11';
+import { ForgeSound } from './sound.js?v=11';
+import { createQaSession } from './qa.js?v=11';
 
 const get = id => document.getElementById(id);
 const canvas = get('scene');
@@ -249,9 +249,10 @@ function drawHeat() {
   const danger = heat.step === 'molten' && (heat.temperature >= 82 || heat.temperature <= 58 || heat.damage >= 65);
   const rank = refinementRank(heat.quality);
   const outcome = REFINEMENT_RESULTS[rank];
+  const paused = !heatInput && heat.step !== 'cast';
   get('heat-step').textContent = { ore: '原石升温', molten: '熔球稳温', cast: '浇注成坯' }[heat.step];
   get('heat-number').textContent = temperature + '°';
-  get('heat-clock').textContent = heat.step === 'cast' ? '浇注中' : !heatInput && !heat.elapsed ? '待点火' : Math.max(0, (heat.step === 'ore' ? HEAT.preheat : HEAT.window) - heat.elapsed).toFixed(1) + ' s';
+  get('heat-clock').textContent = heat.step === 'cast' ? '浇注中' : paused ? heat.elapsed ? '待续炼' : '待点火' : Math.max(0, (heat.step === 'ore' ? HEAT.preheat : HEAT.window) - heat.elapsed).toFixed(1) + ' s';
   get('heat-fill').style.width = temperature + '%';
   get('heat-needle').style.left = temperature + '%';
   get('heat-range').style.left = band.lower + '%';
@@ -259,14 +260,14 @@ function drawHeat() {
   get('heat-target').textContent = band.lower.toFixed(0) + '–' + band.upper.toFixed(0) + '°';
   thermo.dataset.lower = band.lower.toFixed(2);
   thermo.dataset.upper = band.upper.toFixed(2);
-  get('heat-draft').textContent = !heatInput && !heat.elapsed ? '按住点火' : heat.draft > .5 ? '余热 ↑' : '散热 ↓';
+  get('heat-draft').textContent = paused ? heat.elapsed ? '按住续炼' : '按住点火' : heat.draft > .5 ? '余热 ↑' : '散热 ↓';
   get('heat-rank').textContent = rank === 'failed' ? '尚未成坯' : outcome.label;
   get('heat-quality').textContent = Math.floor(heat.quality) + ' / 100';
   get('heat-quality-meter').setAttribute('aria-valuenow', Math.floor(heat.quality));
   get('heat-progress').style.width = heat.quality + '%';
   get('heat-damage').style.width = heat.damage + '%';
   get('heat-damage-value').textContent = Math.round(heat.damage) + '%';
-  get('heat-note').textContent = heat.step === 'ore' ? '加热到 65° 熔化 · 松手仍有余热' : heat.step === 'cast' ? outcome.label + ' · 熔钢入模' :
+  get('heat-note').textContent = paused && heat.elapsed ? '火候已保留 · 按住继续，松手散热' : heat.step === 'ore' ? '加热到 65° 熔化 · 松手仍有余热' : heat.step === 'cast' ? outcome.label + ' · 熔钢入模' :
     heat.temperature >= 82 ? '过热烧损 · 立即松手' : heat.temperature <= 58 ? '即将凝固 · 立即鼓风' :
       green ? '绿区排渣中 · 可择机浇注' : '追随绿区 · 提前松手留余热';
   thermo.setAttribute('aria-valuenow', temperature);
@@ -274,6 +275,7 @@ function drawHeat() {
   stageBox.dataset.danger = String(danger);
   const button = get('heat-button');
   button.disabled = heat.step === 'cast';
+  button.textContent = paused && heat.elapsed ? '按住续炼' : '按住鼓风';
   button.classList.toggle('heating', heat.step !== 'cast' && Boolean(heatInput?.blowing));
   const pour = get('pour-button');
   pour.disabled = heat.step !== 'molten' || heat.elapsed < HEAT.minimum || heat.quality < HEAT.minQuality;
@@ -563,4 +565,4 @@ try {
 }
 render();
 qa?.install();
-if (save.run.phase === 'refine' && (save.run.refining.elapsed > 0 || save.run.refining.step !== 'ore')) startHeat(false);
+if (save.run.phase === 'refine' && save.run.refining.step === 'cast') startHeat(false);

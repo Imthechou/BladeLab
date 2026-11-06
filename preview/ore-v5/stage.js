@@ -1,6 +1,6 @@
-import { sectionContour } from './ore-section.js?v=10';
-import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=10';
-import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=10';
+import { sectionContour } from './ore-section.js?v=11';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=11';
+import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=11';
 import { KNIFE_IDS, regionAt } from './regions.js?v=2';
 
 const T = globalThis.THREE;
@@ -272,7 +272,7 @@ export class ForgeStage {
       oreExposure: { value: .55 }, oreClarity: { value: .5 },
       oreTransmission: { value: .3 }, oreWindow: { value: 0 }, oreLamp: { value: 0 },
     };
-    this.meltUniforms = { meltClock: { value: 0 }, meltHeat: { value: .65 }, meltClean: { value: 0 }, meltTint: { value: new T.Color() }, meltSeed: { value: .5 } };
+    this.meltUniforms = { meltClock: { value: 0 }, meltHeat: { value: .65 }, meltClean: { value: 0 }, meltFailed: { value: 0 }, meltTint: { value: new T.Color() }, meltSeed: { value: .5 } };
     this.inspection = 'natural';
     this.previewSteel = false;
     this.mode = 'ore';
@@ -455,6 +455,7 @@ export class ForgeStage {
     if (this.mode !== 'refine') this.oreUniforms.oreHeat.value = 0;
     this.prepareRun(run);
     const failedRefining = run.last?.type === 'refine-fail';
+    this.meltUniforms.meltFailed.value = failedRefining ? 1 : 0;
     if (failedRefining) {
       this.meltUniforms.meltHeat.value = .08;
       this.meltUniforms.meltClean.value = 0;
