@@ -172,6 +172,8 @@ dialog::backdrop { background: #090807be; }
 #vault-preview { margin-bottom: 12px; }
 #vault-stage { position: relative; height: clamp(172px, 29dvh, 240px); overflow: hidden; border-radius: 10px; background: radial-gradient(ellipse at center,#343d44,#181b20 82%); }
 #vault-stage #scene { cursor: grab; touch-action: none; }
+#vault-stage[data-loading]:not([data-loading="ready"]) #scene { opacity: 0; }
+#vault-loading { position: absolute; inset: 50% 12px auto; translate: 0 -50%; z-index: 1; text-align: center; color: var(--muted); font-size: 12px; }
 .vault-item { color: var(--ink); text-align: left; width: 100%; }
 .vault-item[aria-pressed="true"] { border-color: #a3815e; }
 

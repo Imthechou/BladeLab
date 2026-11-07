@@ -11,10 +11,10 @@ await mkdir(out, { recursive: true });
 if (process.env.QA_ORIGIN) {
   let ready = false;
   for (let i = 0; i < 40 && !ready; i++) {
-    try { ready = (await (await fetch(root + '?refining-revision=' + Date.now())).text()).includes('app.js?v=14'); } catch {}
+    try { ready = (await (await fetch(root + '?refining-revision=' + Date.now())).text()).includes('app.js?v=15'); } catch {}
     if (!ready) await new Promise(resolve => setTimeout(resolve, 3000));
   }
-  assert.ok(ready, 'published V14 must be active before browser acceptance');
+  assert.ok(ready, 'published V15 must be active before browser acceptance');
 }
 const browser = await chromium.launch({ headless: true,
   args: ['--enable-webgl', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'] });
@@ -38,7 +38,7 @@ async function openFurnace(width = 390, lowWallet = false) {
   await page.addInitScript(({ key, save }) => {
     if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(save));
   }, { key: storageKey, save });
-  await page.goto(root + '?v=14', { waitUntil: 'load' });
+  await page.goto(root + '?v=15', { waitUntil: 'load' });
   await page.waitForSelector('#heat-quality');
   assert.equal(await mode(), 'refine');
   assert.equal(await page.locator('#pour-button').isDisabled(), true);

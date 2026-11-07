@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { FITS, LOOKS, buyOre, freshSave } from '../forge.js';
+import { KNIFE_IDS } from '../regions.js';
 
 const origin = process.env.QA_ORIGIN || 'http://127.0.0.1:8217/';
 const out = process.env.QA_OUTPUT || 'artifacts/blade-looks';
@@ -26,7 +27,10 @@ function sampleRun(slot, id, tier) {
 const browser = await chromium.launch({ headless: true,
   args: ['--enable-webgl', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
-const errors = [], samples = [], unreadable = [];
+const errors = [], samples = [], unreadable = [], modelRequests = [];
+page.on('request', request => {
+  if (new URL(request.url()).pathname.endsWith('.glb')) modelRequests.push(request.url());
+});
 page.on('pageerror', error => errors.push(error.message));
 page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
 
@@ -41,7 +45,7 @@ try {
   }));
   await page.goto(url, { waitUntil: 'load' });
   await page.evaluate(async ({ run, fit }) => {
-    const { ForgeStage } = await import('./stage.js?v=14');
+    const { ForgeStage } = await import('./stage.js?v=15');
     const stage = new ForgeStage(document.querySelector('canvas'));
     stage.reduceMotion = true;
     const frames = new Map();
@@ -53,10 +57,12 @@ try {
       stage.turnY = angle;
       await new Promise(requestAnimationFrame);
       stage.active.uniforms.fClock.value = time;
+      const drawStart = performance.now();
       stage.renderer.render(stage.scene, stage.camera);
       const { width, height } = stage.canvas;
       const rgba = new Uint8Array(width * height * 4);
       gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+      const drawMs = +(performance.now() - drawStart).toFixed(2);
       frames.set(key, rgba);
       const differences = compare.map(name => {
         const other = frames.get(name);
@@ -72,20 +78,21 @@ try {
         return { from: name, pixels, mean: +(sum / Math.max(1, pixels)).toFixed(3),
           visible: +(noticeable / Math.max(1, pixels)).toFixed(3) };
       });
-      return { png: stage.canvas.toDataURL().split(',')[1], differences };
+      return { png: stage.canvas.toDataURL().split(',')[1], differences, drawMs,
+        programs: stage.renderer.info.programs.length };
     };
     await stage.load(run.model);
   }, { run: base, fit: FITS.find(fit => fit.id === 'night') });
 
   async function sample(key, run, compare = [], angle = 0, time = .82) {
-    const { png, differences } = await page.evaluate(args => window.captureBladeLook(args), { key, run, compare, angle, time });
+    const { png, differences, drawMs, programs } = await page.evaluate(args => window.captureBladeLook(args), { key, run, compare, angle, time });
     await writeFile(`${out}/${key}.png`, Buffer.from(png, 'base64'));
-    const stats = { key, differences };
+    const stats = { key, differences, drawMs, programs };
     samples.push(stats);
     return stats;
   }
 
-  await sample('base', base);
+  const reference = await sample('base', base);
   const bare = structuredClone(base);
   bare.skin.metal = 'raw';
   await sample('raw', bare);
@@ -104,11 +111,18 @@ try {
     }
   }
   assert.equal(samples.length - 2, 123);
+  assert.equal(modelRequests.length, 1, 'changing finish and tier must reuse the loaded model');
+  assert.ok(samples.every(row => row.programs === reference.programs), 'finish changes must reuse the same shader program');
 
   const full = structuredClone(base);
   Object.assign(full.skin, { metal: 'copper', pattern: 'crystal', film: 'peacock', fx: 'vein' });
   for (const slot of Object.keys(LOOKS)) full.skin.levels[slot] = 3;
   await sample('four-slots', full, ['base']);
+  const withoutPattern = structuredClone(full);
+  withoutPattern.skin.pattern = 'none';
+  withoutPattern.skin.levels.pattern = 0;
+  assert.ok((await sample('four-slots-without-pattern', withoutPattern, ['four-slots'])).differences[0].mean > 2,
+    'the stacked film and effect must leave the pattern visible');
   const newTint = structuredClone(full);
   newTint.ore.tint = 'garnet';
   assert.ok((await sample('four-slots-garnet', newTint, ['four-slots'])).differences[0].mean > 1);
@@ -120,9 +134,10 @@ try {
   assert.ok((await sample('damascus-alternate', variant, ['pattern-damascus-1'])).differences[0].mean > 2);
   await sample('four-slots-turned', full, [], .72);
   await sample('four-slots-animation', full, ['four-slots'], 0, 1.58);
+  for (const model of KNIFE_IDS) await sample('model-' + model, { ...full, model }, [], .18);
   assert.deepEqual(unreadable, [], 'every tier and every pair of first-tier styles must differ');
   assert.deepEqual(errors, []);
-  console.log('Real WebGL: 123 appearances, all first-tier pairs, templates, ore tint, refining and four-slot layering');
+  console.log('Real WebGL: 123 appearances on one loaded model/program, 12 shapes, and visible texture in four-slot layering');
 } finally {
   await writeFile(`${out}/report.json`, JSON.stringify({ samples, unreadable, errors }, null, 2));
   await browser.close();

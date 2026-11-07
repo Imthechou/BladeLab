@@ -22,6 +22,9 @@ on:
       - "scripts/qa-refining.mjs"
       - "scripts/qa-performance.mjs"
       - "scripts/qa-blade-looks.mjs"
+      - "scripts/qa-blade-loading.mjs"
+      - "scripts/pack-forge-models.mjs"
+      - "assets/forge-models/**"
       - "qa.js"
       - "ore-catalog.html"
       - "scripts/ore-geometry.mjs"
@@ -66,6 +69,8 @@ jobs:
         run: node scripts/qa-performance.mjs
       - name: Render all 123 blade looks and verify ore, quality and layout inheritance
         run: node scripts/qa-blade-looks.mjs
+      - name: Cold-load workshop and archive models at 1.6 Mbps
+        run: node scripts/qa-blade-loading.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -77,7 +82,9 @@ jobs:
         if: always()
         with:
           name: bladelab-performance-comparison
-          path: artifacts/performance
+          path: |
+            artifacts/performance
+            artifacts/blade-loading
           retention-days: 7
 
   refining:

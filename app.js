@@ -3,10 +3,10 @@ import {
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
-} from './forge.js?v=14';
-import { ForgeStage } from './stage.js?v=14';
-import { ForgeSound } from './sound.js?v=14';
-import { createQaSession } from './qa.js?v=14';
+} from './forge.js?v=15';
+import { ForgeStage } from './stage.js?v=15';
+import { ForgeSound } from './sound.js?v=15';
+import { createQaSession } from './qa.js?v=15';
 
 const get = id => document.getElementById(id);
 const canvas = get('scene');
@@ -593,12 +593,29 @@ get('vault-list').addEventListener('click', event => {
   const blade = save.collection[Number(item.dataset.blade)];
   vaultView ??= { x: stage.turnX, y: stage.turnY, touched: stage.touched, previewSteel: stage.previewSteel };
   const preview = get('vault-preview');
+  const display = get('vault-stage');
+  const loading = get('vault-loading');
+  const view = vaultView;
+  view.item = item;
   preview.hidden = false;
-  get('vault-stage').append(canvas);
+  display.append(canvas);
   get('vault-looks').innerHTML = lookChips(blade);
   for (const entry of get('vault-list').querySelectorAll('[data-blade]')) entry.setAttribute('aria-pressed', entry === item);
   stage.turnX = stage.turnY = 0;
-  stage.sync({ ...blade, phase: 'appraise' }, blade.ore, FITS.find(fit => fit.id === blade.fit));
+  const pending = stage.sync({ ...blade, phase: 'appraise' }, blade.ore, FITS.find(fit => fit.id === blade.fit));
+  display.dataset.loading = pending ? 'pending' : 'ready';
+  display.setAttribute('aria-busy', String(Boolean(pending)));
+  loading.hidden = !pending;
+  if (pending) {
+    loading.textContent = '刀身载入中';
+    pending.then(ready => {
+      if (vaultView !== view || view.item !== item) return;
+      display.dataset.loading = ready ? 'ready' : 'failed';
+      display.setAttribute('aria-busy', 'false');
+      loading.hidden = ready;
+      if (!ready) loading.textContent = '刀身载入失败';
+    });
+  }
   stage.resize();
   preview.scrollIntoView({ block: 'nearest' });
 });
