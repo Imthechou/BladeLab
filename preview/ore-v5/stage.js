@@ -1,8 +1,8 @@
-import { sectionContour } from './ore-section.js?v=13';
-import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=13';
-import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=13';
+import { sectionContour } from './ore-section.js?v=14';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=14';
+import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=14';
 import { KNIFE_IDS, regionAt } from './regions.js?v=2';
-import { RenderBudget } from './render-budget.js?v=13';
+import { RenderBudget } from './render-budget.js?v=14';
 
 const T = globalThis.THREE;
 const modelFiles = {
@@ -14,6 +14,7 @@ const modelFiles = {
   ...Object.fromEntries(KNIFE_IDS.map(id => [id, 'knife_' + id])),
 };
 const doubleEdge = new Set(['gladius', 'kris', 'skull']);
+const finishSlots = ['metal', 'pattern', 'film', 'fx'];
 const oreProfiles = { river: [1.54, 1.50, 1.54], frost: [1.55, 1.35, 1.55], coal: [1.62, 1.50, 1.57], meteor: [1.72, 1.53, 1.62], ochre: [1.58, 1.73, 1.57] };
 const familyOrder = FAMILIES.map(f => f.id);
 const isOreModel = id => typeof id === 'string' && /^ore_(river|frost|coal|meteor|ochre)_[0-3]$/.test(id);
@@ -51,12 +52,14 @@ function coordinates(geometry, id) {
     maxY[k] = Math.max(maxY[k], y);
   }
   const attrib = new Float32Array(pos.count * 4);
+  let bladeRoot = 1;
   const widthAt = (k, y) => clamp((y - minY[k]) / Math.max(.001, maxY[k] - minY[k]), 0, 1);
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
     const t = along(x);
     const across = widthAt(bin(x), pos.getY(i));
     const { blade, grip } = region(x, pos.getY(i));
+    if (blade > .60) bladeRoot = Math.min(bladeRoot, t);
     const edgeDistance = doubleEdge.has(id) ? Math.min(across, 1 - across) : across;
     const sharp = clamp((.24 - edgeDistance) / .23, 0, 1) * blade * (id === 'blank' ? .23 : 1);
     attrib.set([t, across, grip, sharp], i * 4);
@@ -69,7 +72,7 @@ function coordinates(geometry, id) {
     return [.20, .50, .80].map(fraction => new T.Vector3(x, lerp(bottom, maxY[index], fraction), max.z * .50))
       .filter(point => region(point.x, point.y).blade > .60);
   });
-  return { guides, along, region, across: (x, y) => widthAt(bin(x), y) };
+  return { guides, along, region, bladeRoot: bladeRoot < 1 ? bladeRoot : 0, across: (x, y) => widthAt(bin(x), y) };
 }
 
 function oreSection(geometry, cut, crust = .5) {
@@ -307,7 +310,7 @@ export class ForgeStage {
   load(id) {
     if (this.cache.has(id)) return Promise.resolve(this.cache.get(id));
     if (this.pending.has(id)) return this.pending.get(id);
-    const url = new URL(`${isOreModel(id) ? './' : '../../'}assets/models/${modelFiles[id]}.glb`, import.meta.url);
+    const url = new URL(`./assets/models/${modelFiles[id]}.glb`, import.meta.url);
     const pending = this.loader.loadAsync(url.href).then(({ scene }) => {
       let source;
       scene.traverse(obj => { if (obj.isMesh && !source) source = obj; });
@@ -315,6 +318,7 @@ export class ForgeStage {
       const process = isOreModel(id) || id === 'molten';
       const coords = process ? null : coordinates(geometry, id);
       const uniforms = isOreModel(id) ? this.oreUniforms : id === 'molten' ? this.meltUniforms : surfaceUniforms();
+      if (coords) uniforms.fBladeRoot.value = coords.bladeRoot;
       const material = isOreModel(id) ? makeOreMaterial(source.material, uniforms, id.split('_')[1]) :
         id === 'molten' ? makeMeltMaterial(uniforms) : makeBladeMaterial(source.material, uniforms, id === 'blank');
       const mesh = new T.Mesh(geometry, material);
@@ -402,6 +406,29 @@ export class ForgeStage {
     return this.warmScenes.get(profile);
   }
 
+  warmDraw(scene, mesh) {
+    const { renderer, camera } = this;
+    const viewport = renderer.getViewport(new T.Vector4());
+    const scissor = renderer.getScissor(new T.Vector4());
+    const scissorTest = renderer.getScissorTest();
+    scene.add(mesh);
+    try {
+      // A tiny draw also warms the driver pipeline and uploads geometry.
+      // Keep it in the clipped corner of the real framebuffer so the
+      // lighting, output space and multisampling match the anvil.
+      renderer.setViewport(0, 0, 4, 4);
+      renderer.setScissor(0, 0, 4, 4);
+      renderer.setScissorTest(true);
+      renderer.render(scene, camera);
+    } finally {
+      scene.remove(mesh);
+      renderer.setViewport(viewport);
+      renderer.setScissor(scissor);
+      renderer.setScissorTest(scissorTest);
+      this.invalidate(80);
+    }
+  }
+
   async pumpWarm() {
     if (this.warmBusy || !this.warmQueue.length) return;
     if (this.busyForWarm()) { this.scheduleWarm(120); return; }
@@ -415,10 +442,13 @@ export class ForgeStage {
       if (this.busyForWarm()) { this.warmQueue.unshift(id); requeued = true; return; }
       const temporary = new T.Scene();
       temporary.environment = this.scene.environment;
-      temporary.add(mesh.clone());
+      const specimen = mesh.clone();
+      temporary.add(specimen);
       const target = this.warmScene(id);
       if (this.renderer.extensions.has('KHR_parallel_shader_compile')) await this.renderer.compileAsync(temporary, this.camera, target);
       else this.renderer.compile(temporary, this.camera, target);
+      if (this.busyForWarm()) { this.warmQueue.unshift(id); requeued = true; return; }
+      if (KNIFE_IDS.includes(id)) this.warmDraw(target, specimen);
       this.warmed.add(id);
     } catch (error) {
       console.warn('Model preload', id, error);
@@ -536,7 +566,7 @@ export class ForgeStage {
       this.meltUniforms.meltSeed.value=ore.figure ?? .5;
     }
     if (this.mode !== 'refine') this.oreUniforms.oreHeat.value = 0;
-    this.prepareRun(run);
+    if (run.seed !== undefined) this.prepareRun(run);
     this.meltUniforms.meltFailed.value = failedRefining ? 1 : 0;
     if (failedRefining) {
       this.meltUniforms.meltHeat.value = .08;
@@ -713,7 +743,12 @@ export class ForgeStage {
     const high = event.type === 'surge' || event.notable;
     const broken = event.type === 'break';
     this.bangedAt = performance.now();
-    this.lastImpact = { local: hit.local.clone(), zone: hit.zone, large: high || broken, wave: high || Boolean(event.change) };
+    const uniforms = this.active?.uniforms;
+    const slot = finishSlots.indexOf(event.change?.slot) + 1;
+    const action = event.change?.action;
+    const finish = [slot, action === 'upgrade' ? 2 : action === 'fade' ? 3 : 1,
+      uniforms?.fCodes?.value.w ?? 0, uniforms?.fLevels?.value.w ?? 0];
+    this.lastImpact = { local: hit.local.clone(), zone: hit.zone, large: high || broken, wave: high || Boolean(event.change), finish };
     this.bangPower = broken ? 1.6 : high ? 1.2 : .72;
     this.flash.position.copy(hit.world).add(new T.Vector3(0, .025, .18));
     this.flash.intensity = this.bangPower * 3.7;
@@ -834,7 +869,8 @@ export class ForgeStage {
       (this.pieces && now - this.splitAt < 2200) || now - this.swapAt < 350;
     const continuous = (mode === 'refine' && this.refiningRunning) || this.blow || transition ||
       now < this.dirtyUntil || strikeAge < 750 || this.sparks.particles.length > 0;
-    const animatedIdle = melt && !failedRefining || this.run?.skin?.fx === 'aurora';
+    const animatedIdle = !this.reduceMotion && (melt && !failedRefining ||
+      mode !== 'broken' && (this.active?.uniforms.fCodes?.value.w ?? 0) > 0);
     const renderDue = this.onScreen && (continuous || animatedIdle && now - (this.lastRender || 0) >= 1000 / 30);
     if (!renderDue && !continuous) return;
     if (renderDue && continuous) {
@@ -864,6 +900,7 @@ export class ForgeStage {
       uniforms.fHeat.value = mode === 'refine' ? this.heat : mode === 'forge' && this.shown === 'blank' ? .15 : 0;
       uniforms.fPulse.value = Math.min(1.3, impulse);
       uniforms.fWave.value = this.lastImpact?.wave ? 1 - clamp(strikeAge / 270, 0, 1) : 0;
+      if (uniforms.fWave.value > 0) uniforms.fFinishChange.value.fromArray(this.lastImpact.finish);
     }
     this.anvil.visible = working && mode !== 'refine' && !failedRefining;
     this.crucible.visible = mode === 'refine' || failedRefining;

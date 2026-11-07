@@ -1,10 +1,9 @@
-import { MARK_WIDTH, MARK_HEIGHT, oreMaterialOf, mineralHeritage } from './forge.js?v=13';
+import { MARK_WIDTH, MARK_HEIGHT, mineralHeritage, lookVariant } from './forge.js?v=14';
+import { bladeLooksGLSL, lookCodes } from './blade-looks.js?v=14';
 
 const T = globalThis.THREE;
-const metalId = { raw: 0, silver: 1, pearl: 2, gunmetal: 3, obsidian: 4 };
-const patternId = { none: 0, damascus: 1, crystal: 2, ember: 3, nebula: 4 };
-const filmId = { none: 0, oxide: 1, doppler: 2, rainbow: 3, gold: 4 };
-const fxId = { none: 0, edge: 1, ember: 2, aurora: 3 };
+const layoutUniforms = { metal: 'fMetalLayout', pattern: 'fPatternLayout', film: 'fFilmLayout', fx: 'fFxLayout' };
+const layoutAnchors = [.27, .5, .73];
 
 export function surfaceUniforms() {
   const marks = new T.DataTexture(new Uint8Array(MARK_WIDTH * MARK_HEIGHT * 4), MARK_WIDTH, MARK_HEIGHT);
@@ -13,6 +12,12 @@ export function surfaceUniforms() {
   return {
     fCodes: { value: new T.Vector4() },
     fLevels: { value: new T.Vector4() },
+    fMetalLayout: { value: new T.Vector4(.5, 0, 1, .5) },
+    fPatternLayout: { value: new T.Vector4(.5, 0, 1, .5) },
+    fFilmLayout: { value: new T.Vector4(.5, 0, 1, .5) },
+    fFxLayout: { value: new T.Vector4(.5, 0, 1, .5) },
+    fBladeRoot: { value: 0 },
+    fFinishChange: { value: new T.Vector4() },
     fClock: { value: 0 },
     fSeed: { value: 0 },
     fHeat: { value: 0 },
@@ -20,6 +25,7 @@ export function surfaceUniforms() {
     fPurity: { value: .65 },
     fRefine: { value: .5 },
     fOreTone: { value: new T.Color('#879cab') },
+    fOreCore: { value: new T.Color('#a9bfc7') },
     fOreTrace: { value: .5 },
     fOreStyle: { value: 0 },
     fOreFamily: { value: 0 },
@@ -38,16 +44,25 @@ export function surfaceUniforms() {
 
 export function setSurface(uniforms, run, fit) {
   const { skin } = run;
-  uniforms.fCodes.value.set(metalId[skin.metal], patternId[skin.pattern], filmId[skin.film], fxId[skin.fx]);
-  uniforms.fLevels.value.set(skin.levels.metal, skin.levels.pattern, skin.levels.film, skin.levels.fx);
-  uniforms.fSeed.value = skin.seed;
+  uniforms.fCodes.value.set(lookCodes.metal[skin.metal] ?? 0, lookCodes.pattern[skin.pattern] ?? 0,
+    lookCodes.film[skin.film] ?? 0, lookCodes.fx[skin.fx] ?? 0);
+  uniforms.fLevels.value.set(skin.levels.metal ?? 1, skin.levels.pattern ?? 0, skin.levels.film ?? 0, skin.levels.fx ?? 0);
+  for (const [slot, uniform] of Object.entries(layoutUniforms)) {
+    if (!lookCodes[slot][skin[slot]]) continue;
+    const { layout, seed } = lookVariant(skin, slot);
+    const slope = seed * 13.81 % 1;
+    const scale = seed * 27.11 % 1;
+    uniforms[uniform].value.set((layoutAnchors[layout] ?? .5) + (seed - .5) * .095,
+      (slope - .5) * .52, .85 + scale * .30, seed);
+  }
+  uniforms.fSeed.value = skin.seed ?? .5;
   uniforms.fPurity.value = (run.purity || run.ore?.purity || 65) / 100;
   uniforms.fRefine.value = (run.refinement?.quality ?? 50) / 100;
-  const sourceMineral = oreMaterialOf(run.ore);
   const heritage = mineralHeritage(run.ore);
   uniforms.fOreTone.value.set(heritage.tone);
-  uniforms.fOreTrace.value = (run.ore?.vein ?? 52) / 100;
-  uniforms.fOreStyle.value = sourceMineral.style;
+  uniforms.fOreCore.value.set(heritage.core);
+  uniforms.fOreTrace.value = heritage.trace;
+  uniforms.fOreStyle.value = heritage.style;
   uniforms.fOreFamily.value = heritage.family;
   uniforms.fOreSeed.value = heritage.seed;
   uniforms.fOreClarity.value = heritage.clarity;
@@ -56,7 +71,7 @@ export function setSurface(uniforms, run, fit) {
   uniforms.fGripStyle.value = fit?.grip || 0;
   uniforms.fFitted.value = fit ? 1 : 0;
   const texture = uniforms.fMarks.value;
-  if (texture.userData.seed !== run.seed || texture.userData.hit !== run.hits) {
+  if (texture.userData.marks !== run.marks || texture.userData.hit !== run.hits) {
     const pixels = texture.image.data;
     pixels.fill(0);
     for (const [index, mark] of Object.entries(run.marks || {})) {
@@ -65,7 +80,7 @@ export function setSurface(uniforms, run, fit) {
       pixels[i + 1] = ((mark >> 4) & 15) * 17;
       pixels[i + 2] = ((mark >> 8) & 15) * 17;
     }
-    texture.userData.seed = run.seed;
+    texture.userData.marks = run.marks;
     texture.userData.hit = run.hits;
     texture.needsUpdate = true;
   }
@@ -84,7 +99,7 @@ vForgeNormal = normalize(normalMatrix * normal);
 `;
 
 const fragmentHead = `
-uniform vec4 fCodes, fLevels;
+uniform vec4 fCodes, fLevels, fFinishChange;
 uniform float fClock, fSeed, fHeat, fPurity, fRefine, fPulse, fWave, fGripStyle, fFitted, fRaw, fOreTrace, fOreStyle, fOreFamily, fOreSeed, fOreClarity;
 uniform sampler2D fMarks;
 uniform vec3 fGrip, fGuard, fHit, fOreTone;
@@ -179,22 +194,37 @@ vec2 fp = vec2(vForgePos.x, vForgePos.y + abs(vForgePos.z)*.26);
 vec2 st = vForge.xy;
 float grip = smoothstep(.02,.96,vForge.z) * fFitted;
 float edge = vForge.w;
-float grazing = pow(1. - abs(dot(normalize(vForgeNormal),normalize(vViewPosition))),2.7);
+vec2 uv = vec2((st.x-fBladeRoot)/max(.34,1.-fBladeRoot), st.y);
+float view = 1.-clamp(abs(dot(normalize(vForgeNormal),normalize(vViewPosition))),0.,1.);
+float grazing = pow(view,2.7);
 float bend = fSeed*6.28318;
 float coarse = forgeNoise(fp*vec2(8.,24.)+vec2(bend,-bend));
 vec3 mark = texture2D(fMarks,st).rgb;
 float brush = sin(fp.y*1950. + sin(fp.x*21.)*1.5) * (1.-smoothstep(.2,2.8,fwidth(fp.y*1950.)));
-float refine = clamp((fLevels.x-1.)*.04,0.,.085);
-vec3 steel = vec3(.35,.38,.40);
 float forgeRough = .32;
 float forgeMetal = .92;
-vec3 forgeGlow = vec3(0.);
-if (fCodes.x > .5 && fCodes.x < 1.5) { steel = vec3(.55,.59,.63); forgeRough = .245; }
-else if (fCodes.x < 2.5 && fCodes.x > 1.5) { steel = vec3(.51,.64,.67); forgeRough = .255; }
-else if (fCodes.x < 3.5 && fCodes.x > 2.5) { steel = vec3(.25,.29,.36); forgeRough = .28; }
-else if (fCodes.x > 3.5) { steel = vec3(.21,.19,.23); forgeRough = .255; }
+float track = 0., spread = 1.;
+vec4 ranks = fLevels, visibility = vec4(1.);
+int fxStyle = int(fCodes.w);
+if (fWave > 0.) {
+  track = length((vForgePos.xy-fHit.xy)*vec2(1.,1.7));
+  spread = smoothstep(track-.105,track+.12,(1.-fWave)*1.34);
+  int slot = int(fFinishChange.x)-1;
+  if (slot >= 0) {
+    if (fFinishChange.y == 2.) ranks[slot] -= 1.-spread;
+    else if (fFinishChange.y == 3.) {
+      fxStyle = int(fFinishChange.z);
+      ranks.w = mix(fFinishChange.w,fLevels.w,spread);
+      if (fCodes.w == 0.) visibility.w = 1.-spread;
+    } else visibility[slot] = spread;
+  }
+}
+int metalStyle = int(fCodes.x);
+vec3 steel = lookSteel(metalStyle,ranks.x,uv,edge,coarse,forgeRough);
+steel = mix(vec3(.35,.38,.40),steel,visibility.x);
+forgeRough = mix(.32,forgeRough,visibility.x);
 steel *= .92 + brush*.038 + coarse*.13;
-forgeRough += brush*.025 + (coarse-.5)*.14 - refine + (.5-fRefine)*.20;
+forgeRough += brush*.025 + (coarse-.5)*.10 + (.5-fRefine)*.20;
 float slag = smoothstep(.44+fRefine*.36,.94,forgeNoise(fp*vec2(49.,91.)+bend));
 steel *= 1.-(1.-fPurity)*slag*.42;
 forgeRough += (1.-fPurity)*slag*.14;
@@ -202,80 +232,42 @@ forgeRough += (1.-fPurity)*slag*.14;
 vec4 sourceField = mineralField(vec3(0.,st.y*.84-.42,st.x*1.42-.71),fOreFamily,fOreStyle,fOreSeed);
 float inheritedGrain = sourceField.x * (.45+.55*fOreTrace);
 vec3 sourceBase = fOreTone*(.72+coarse*.18);
-steel = mix(steel,sourceBase,.72);
+steel = mix(steel,sourceBase,metalStyle == 0 ? .72 : .49);
 vec3 sourceLight = mix(vec3(.59,.64,.67),fOreTone,.66);
 if(fOreFamily < .5) steel = mix(steel,steel*.34,inheritedGrain*.80);
 else if(fOreFamily < 1.5) steel = mix(steel,sourceLight*(.36+sourceField.y*.70),.46+inheritedGrain*.18);
-else if(fOreFamily < 2.5) steel = mix(steel*.54,fOreTone*(.92+.18*sourceField.z),inheritedGrain*.88);
-else if(fOreFamily < 3.5) steel = mix(steel*.65,sourceLight,inheritedGrain*.72);
-else steel = mix(steel*.79,sourceLight,inheritedGrain*.61);
+else if(fOreFamily < 2.5) steel = mix(steel*.69,fOreTone*(.92+.18*sourceField.z),inheritedGrain*.84);
+else if(fOreFamily < 3.5) steel = mix(steel*.74,sourceLight,inheritedGrain*.72);
+else steel = mix(steel*.84,sourceLight,inheritedGrain*.61);
 float sourceHaze=(1.-fOreClarity)*smoothstep(.30,.74,sourceField.z);
 steel=mix(steel,mix(steel*.83,vec3(.40,.43,.45),.18),sourceHaze*.30);
 forgeRough += inheritedGrain*.10 + (sourceField.z-.5)*.025 + (1.-fOreClarity)*.085 - fOreClarity*.028;
-float patternWeight = .56 + .12 * fLevels.y;
-float pat = 0.;
-float seam = 0.;
-if (fCodes.y > .5 && fCodes.y < 1.5) {
-  float wav = fp.y*81. + sin(fp.x*11.+bend)*1.25 + sin(fp.x*25.+fp.y*18.-bend)*.43 + coarse*.35;
-  pat = mix(forgeBand(wav, .105),forgeBand(wav*.51+.24,.072),.36);
-  steel *= 1.12 - pat * patternWeight*.77;
-  forgeRough += pat*.16;
-} else if (fCodes.y > 1.5 && fCodes.y < 2.5) {
-  vec2 q = fp*vec2(21.,58.) + bend;
-  q += vec2(coarse*.31, sin(q.x*.72+bend)*.24);
-  vec2 c = vec2(q.x+.53*q.y,q.x-.64*q.y);
-  vec2 i = floor(c);
-  float facet = forgeHash(i);
-  float cut = max(forgeBand(c.x,.045),forgeBand(c.y,.044));
-  steel = mix(steel, mix(vec3(.25,.39,.46),vec3(.67,.82,.82),facet), patternWeight*.76);
-  steel += cut*.055;
-  forgeRough += (facet-.45)*.19 + cut*.055;
-} else if (fCodes.y > 2.5 && fCodes.y < 3.5) {
-  float meander = fp.y*30. + sin(fp.x*17.+bend)*.70 + sin(fp.x*39.-bend)*.18 + coarse*.32;
-  seam = forgeBand(meander,.045) * smoothstep(.24,.53,coarse) * (1.-edge*.75);
-  steel = mix(steel*.57,vec3(.65,.20,.073),seam*patternWeight);
-  forgeRough += .09*(1.-seam);
-} else if (fCodes.y > 3.5) {
-  float dust = forgeHash(floor(fp*vec2(350.,530.)));
-  float ribbon = smoothstep(.31,.76,coarse*.62+forgeNoise(fp*vec2(3.,15.)+bend)*.46);
-  vec3 sky = mix(vec3(.115,.13,.24),vec3(.40,.28,.58),ribbon);
-  steel = mix(steel,sky,patternWeight*.77);
-  steel += smoothstep(.979,.999,dust)*ribbon*.36;
+
+vec4 special = vec4(0.);
+#ifdef BLADE_DECORATION
+float ink = 0., seam = 0.;
+if (fCodes.y > .5) {
+  vec3 base = steel;
+  float baseRough = forgeRough;
+  ink = lookPattern(int(fCodes.y),ranks.y,uv,coarse,steel,forgeRough,seam)*visibility.y;
+  steel = mix(base,steel,visibility.y);
+  forgeRough = mix(baseRough,forgeRough,visibility.y);
+  seam *= visibility.y;
 }
-float filmMix = (.22 + .105*fLevels.z) * (fCodes.y > .5 ? .77 : 1.);
-if (fCodes.z > .5 && fCodes.z < 1.5) {
-  float hamon = smoothstep(.14,.8,st.y+.18*sin(fp.x*24.+bend)+.22*coarse);
-  vec3 oxide = mix(vec3(.58,.34,.15),vec3(.13,.32,.65),hamon);
-  steel = mix(steel,oxide,filmMix*(.44+.56*hamon));
-} else if (fCodes.z > 1.5 && fCodes.z < 2.5) {
-  float current = sin(st.x*9. + 2.2*sin(st.x*3.2+bend) + st.y*1.35 + coarse*2.);
-  vec3 jewel = mix(vec3(.094,.37,.49),vec3(.49,.19,.56),smoothstep(-.42,.72,current));
-  steel = mix(steel,jewel,min(.67, filmMix*1.7));
-  forgeRough -= .08;
-} else if (fCodes.z > 2.5 && fCodes.z < 3.5) {
-  float phase = st.x*4.8+st.y*1.15+grazing*3.7+coarse*.86+bend;
-  vec3 prism = .37 + .29*cos(phase + vec3(0.,2.094,4.188));
-  steel = mix(steel,prism,min(.58,filmMix*(.85+.65*grazing)));
-  forgeRough -= .035;
-} else if (fCodes.z > 3.5) {
-  float coast = smoothstep(.14,.88,st.x + sin(st.y*5.+bend)*.11);
-  steel = mix(steel,mix(vec3(.34,.16,.33),vec3(.79,.41,.12),coast),filmMix*1.29);
-  forgeRough -= .043;
+if (fxStyle > 0) special = lookEffect(fxStyle,ranks.w,uv,edge,coarse,seam)*visibility.w;
+if (fCodes.z > .5) {
+  vec3 base = steel;
+  float baseRough = forgeRough;
+  lookFilm(int(fCodes.z),ranks.z,uv,view,edge,ink,special.a,steel,forgeRough);
+  steel = mix(base,steel,visibility.z);
+  forgeRough = mix(baseRough,forgeRough,visibility.z);
 }
-steel = mix(steel,vec3(.64,.68,.71)*(1.-.22*grazing),edge*.58);
-forgeRough = mix(forgeRough,.17,edge*.61);
+#endif
+steel = mix(steel,vec3(.64,.68,.71)*(1.-.22*grazing),edge*.37);
+forgeRough = mix(forgeRough,.17,edge*.43);
 float pulse = fPulse * exp(-abs(vForgePos.x-fHit.x)*9. - abs(vForgePos.y-fHit.y)*20.);
-vec3 aura = mix(vec3(.24,.75,.94),vec3(.72,.42,1.),sin(st.x*6.+bend)*.5+.5);
-if (fCodes.w > .5) {
-  float rank = fLevels.w/3.;
-  float sweep = pow(.5+.5*sin(st.x*15. - fClock*3.15 + bend),6.);
-  if (fCodes.w < 1.5) forgeGlow += aura * edge * rank * (.11+.22*sweep);
-  else if (fCodes.w < 2.5) forgeGlow += vec3(1.,.23,.032) * max(seam,edge*.38) * rank * (.21+.25*sweep);
-  else {
-    float veil = smoothstep(.35,.83,coarse)*(.03+.19*sweep);
-    forgeGlow += aura * rank * (edge*.19 + veil + (rank > .99 ? grazing*.16 : 0.));
-  }
-}
+vec3 aura = mineralAccent(vec3(.28,.67,.86),.27);
+vec3 forgeGlow = special.rgb;
 float grain = forgeBand(st.y*31. + st.x*(3.+mark.g*7.) + coarse*.3,.11);
 steel *= 1. + mark.r * (.11 + (grain-.36)*.16);
 forgeRough -= mark.r*.17;
@@ -285,8 +277,7 @@ forgeRough += mark.b*.22;
 vec3 tapHeat = vec3(1.,.24,.047);
 forgeGlow += (pulse*.52+fHeat*fHeat*mix(.08,.52,coarse))*tapHeat;
 float shock = max(0.,fWave);
-float track = length((vForgePos.xy-fHit.xy)*vec2(1.,2.2));
-forgeGlow += aura * exp(-abs(track-(1.-shock)*.72)*31.) * shock * .31;
+if (shock > 0.) forgeGlow += aura * exp(-abs(track-(1.-shock)*1.02)*31.) * shock * .25;
 float source = clamp(dot(diffuseColor.rgb,vec3(.213,.715,.072)),0.,1.);
 float wrap = .88 + .13*sin(st.x*(fGripStyle > 2.5 ? 193. : 88.) + st.y*6.);
 vec3 hilt = fGrip * (source*.54+.72) * (fGripStyle > 1.5 ? wrap : .91+.19*coarse);
@@ -312,11 +303,12 @@ export function makeBladeMaterial(original, uniforms, raw) {
     envMapIntensity: 1.22,
   });
   material.userData.forge = uniforms;
-  material.customProgramCacheKey = () => 'blade-lab-refined-mineral-heritage-8';
+  if (!raw) material.defines = { ...material.defines, BLADE_DECORATION: 1 };
+  material.customProgramCacheKey = () => raw ? 'blade-lab-billet-14' : 'blade-lab-looks-14';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = vertexHead + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + vertexBody);
-    shader.fragmentShader = fragmentHead + geology + shader.fragmentShader
+    shader.fragmentShader = fragmentHead + geology + bladeLooksGLSL + shader.fragmentShader
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + body)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = forgeRough;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = forgeMetal;')
