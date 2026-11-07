@@ -3,10 +3,10 @@ import {
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
-} from './forge.js?v=15';
-import { ForgeStage } from './stage.js?v=15';
-import { ForgeSound } from './sound.js?v=15';
-import { createQaSession } from './qa.js?v=15';
+} from './forge.js?v=16';
+import { ForgeStage } from './stage.js?v=16';
+import { ForgeSound } from './sound.js?v=16';
+import { createQaSession } from './qa.js?v=16';
 
 const get = id => document.getElementById(id);
 const canvas = get('scene');
@@ -176,7 +176,7 @@ function render() {
     actions.innerHTML = button('finish', '收锤 · 保住这一把', { off: run.hits < 6 }) +
       `<span class="action-note">${run.hits < 6 ? '第 6 锤后可收锤 · 前六锤稳定' : '收锤后直接进入装配'}</span>`;
   } else if (phase === 'fit') {
-    title('04 / FITTINGS', '挑一套配件', '点选在同一机位试装，再点已选的一套可恢复原钢。');
+    title('04 / FITTINGS', '挑一套配件', '点选试装，拖动转刀。查看刀柄可近看材质和端箍。');
     readout.innerHTML = fit ? info('当前试装', fit.name, fit.parts) : info('锻打完成', MODELS[run.model], '已经保留 ' + run.hits + ' 锤的结果。');
     actions.innerHTML = button('appraise', '确认装配 · 鉴定', { off: !fit }) +
       button('refresh', run.refreshed ? '本炉已刷新' : '刷新一轮 · ' + REFRESH_PRICE + ' CR', { kind: 'secondary', off: run.refreshed || save.credits < REFRESH_PRICE });
@@ -199,8 +199,16 @@ function render() {
     actions.innerHTML = button('restart', '再开一炉');
   }
   stage?.sync(run, ore, fit);
+  renderGripFocus();
   renderTools(run,ore);
   renderTray(run, fit);
+}
+
+function renderGripFocus() {
+  const button = get('grip-focus');
+  button.hidden = save.run.phase !== 'fit' || !stage || webglError;
+  button.setAttribute('aria-pressed', String(Boolean(stage?.gripFocus)));
+  button.querySelector('span').textContent = stage?.gripFocus ? '查看全刀' : '查看刀柄';
 }
 
 function renderTools(run,ore) {
@@ -494,6 +502,10 @@ document.addEventListener('click', event => {
   } else if (action === 'finish') {
     closeAnvil();
     return;
+  } else if (action === 'focus-grip' && run.phase === 'fit' && stage) {
+    stage.setGripFocus(!stage.gripFocus);
+    renderGripFocus();
+    return;
   } else if (action === 'select-fit' && run.phase === 'fit' && fitOptions(run).some(item => item.id === id)) {
     run.fit = run.fit === id ? null : id;
   } else if (action === 'refresh' && refreshFittings(save)) {
@@ -591,7 +603,7 @@ get('vault-list').addEventListener('click', event => {
   const item = event.target.closest('[data-blade]');
   if (!item) return;
   const blade = save.collection[Number(item.dataset.blade)];
-  vaultView ??= { x: stage.turnX, y: stage.turnY, touched: stage.touched, previewSteel: stage.previewSteel };
+  vaultView ??= { x: stage.turnX, y: stage.turnY, touched: stage.touched, previewSteel: stage.previewSteel, gripFocus: stage.gripFocus };
   const preview = get('vault-preview');
   const display = get('vault-stage');
   const loading = get('vault-loading');
@@ -632,6 +644,8 @@ get('vault').addEventListener('close', () => {
   stage.turnX = view.x;
   stage.turnY = view.y;
   stage.touched = view.touched;
+  stage.setGripFocus(view.gripFocus);
+  renderGripFocus();
 });
 get('close-vault').addEventListener('click', () => get('vault').close());
 

@@ -90,7 +90,8 @@ try {
   assert.deepEqual(current.selectionWorkshopRequests, [], 'ore selection must not compete with workshop asset preloads');
   assert.equal(current.compactModels.length, 4);
   assert.deepEqual(current.legacyModels, [], 'Meshopt playback should not fall back to legacy files');
-  assert.ok(current.models.every(row => row.bytes > 0 && row.bytes < 250000), 'workshop models must retain their compact transfer budget');
+  assert.ok(current.models.every(row => row.bytes > 0 && row.bytes < (['blank', 'molten'].includes(row.id) ? 125000 : 380000)),
+    'the native knife atlases and compact workshop meshes must fit their transfer budgets');
   const result = { network, baseline, candidate: current };
   await writeFile(`${output}/loading.json`, JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));

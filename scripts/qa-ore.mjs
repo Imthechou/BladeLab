@@ -23,7 +23,7 @@ const image = name => page.screenshot({ path: `${output}/${name}.png`, animation
 const step = () => page.locator('#stage').getAttribute('data-mode');
 const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 try {
-  await page.goto(origin+'?v=15', { waitUntil: 'load' });
+  await page.goto(origin+'?v=16', { waitUntil: 'load' });
   await page.waitForSelector('.ore-grid .ore-card');
   await page.waitForFunction(()=>[...document.querySelectorAll('.ore-thumbnail img')].every(img=>img.naturalWidth>0));
   await page.waitForTimeout(600);
@@ -133,6 +133,12 @@ try {
   await page.locator('[data-action="finish"]').click();
   await page.waitForFunction(() => document.querySelector('#stage')?.dataset.mode === 'fit', { timeout: 6000 });
   await page.locator('.fit-card').first().click();
+  await page.locator('#grip-focus').click();
+  assert.equal(await page.locator('#grip-focus').getAttribute('aria-pressed'), 'true');
+  await page.waitForTimeout(250);
+  await image('05b-fitted-grip-375');
+  await page.locator('#grip-focus').click();
+  assert.equal(await page.locator('#grip-focus').getAttribute('aria-pressed'), 'false');
   await page.locator('[data-action="appraise"]').click();
   assert.equal(await step(), 'appraise');
   await image('06-appraised-375');
@@ -151,6 +157,7 @@ try {
     await page.waitForTimeout(400);
     await image('07-vault-375');
     assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).collection[0].skin, storageKey), archived.skin);
+    assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).collection[0].fit, storageKey), archived.fit);
   }
   await page.locator('#close-vault').click();
   await page.locator('#stage #scene').waitFor();

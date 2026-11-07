@@ -27,15 +27,17 @@
 
 每炉的构图由种子确定并随刀存档。落锤后能看到新款铺开、强化扩展与特效退档。成品入藏后点记录即可旋转复看，检视沿用工作台的同一个 3D 画布。
 
-纹理的刻线和亮边会透过表面膜，膜色随刀面反射变化。常驻特效沿刃缘、纹沟或局部刀面运动，鉴定和藏刀共用检视灯光。
+纹理的刻线和亮边会透过表面膜。夜潮根据种子在绛紫与蓝青色间偏移，淬蓝的火色和局部磨损露出底钢。精炼在全部材质合成后收细高光和残渣，霜银、镜缎、霜瓷等材质各自保留反光特征。常驻特效沿刃缘、纹沟或局部刀面运动。
 
-`node scripts/qa-blade-looks.mjs` 渲染 123 个款式档位与 12 种刀型，检查 I 档辨识度、升档、换模板、矿芯、精炼和四槽叠加。切换同一刀型的外观会复用模型和着色器。
+12 种刀型各有独立的刃沟、脊线或烧刃构成，以及贴合现有网格的配件锚点。04 装配可以近看刀柄。六组配件使用独立的木纹、纤维、骨纹、缝皮、缠线和石纹，并采用原始底色、法线和粗糙度贴图。鉴定与藏刀从同一条存档记录重建装配、精炼、纹样和锤痕。
+
+`node scripts/qa-blade-looks.mjs` 渲染 123 个款式档位、12 种刀型与六种配件近景，同时测量四档精炼的粗糙度和入藏前后画面一致性。切换同一刀型的外观会复用模型和着色器。
 
 ## 流畅度
 
 - 精炼模拟与指针运动跟随帧循环；温度、质量等文字按需更新，常规采样 80 毫秒一次。进度条、温针和绿区使用 transform，鼓风、浇注和危险状态立即响应。
 - 刀型预热串行去重，并使用后续阶段的真实灯光配置。先准备熔球、刀胚与当前普通刀型，异形刀到第 8 锤后再准备；正在控温或落锤时暂缓后台编译。
-- 轻量 GLB 从开料后按阶段加载。12 把刀的模型由 7.32 MB 缩至 2.59 MB，藏刀按点击加载并在模型就绪后显示。`node scripts/qa-blade-loading.mjs` 记录 1.6 Mbps 限速下的冷加载和藏刀首帧，设置 `BASELINE_ORIGIN` 可以对照旧版。
+- 轻量 GLB 从开料后按阶段加载。12 把刀保留三张原始贴图，压缩后模型合计 3.72 MB。藏刀按点击加载，最多保留五个刀型在内存中。`node scripts/qa-blade-loading.mjs` 记录 1.6 Mbps 限速下的冷加载和藏刀首帧，设置 `BASELINE_ORIGIN` 可以对照旧版。
 - 各阶段只保留需要的灯光类型。静止原石按需绘制，拖动 / 锤击 / 过渡与控温按帧绘制；暂停时的熔球和流光保持 30 帧动画，离开视口的舞台停止 GPU 提交。
 - 持续慢帧时提前降低 3D 像素倍率，最低保持 1 倍，不因主动停绘或后台停顿误降画质，也不反复升降倍率。
 - 控温中的自动存档移到空闲时间；阶段变化、页面隐藏和离开页面立即保存。精炼难度、物理步长与失败规则不变。
@@ -58,6 +60,8 @@ npm test
 - 熔炼球、刀胚、12 款刀型的 GLB、柄区划分和 Three.js 加载器来自 [锻刀大赛原项目](https://github.com/Imthechou/blade-forge-3d/tree/c0f64354debed6e7eb7aed6f6877f270ba5174af/game)。刀面材质、铁砧、锤子和合成锤击音为 BladeLab 制作。
 - [ForgeTax](https://store.steampowered.com/app/5245810/ForgeTax/) 提供收锤与继续冒险的参考。
 - [Valve 武器工艺指南](https://www.counter-strike.net/workshop/workshopfinishes/) 提供金属、纹样与表面处理分层的参考。
+- [cs2-web](https://github.com/apich/cs2-web) 与 [img2threejs](https://github.com/henders23/img2threejs) 提供保留 UV、分离贴图通道和多角度验收的参考。[Weapon Paint Website](https://github.com/skullboypl/cs2-weapon-paint-website) 与 [WeaponPaints](https://github.com/Nereziel/cs2-WeaponPaints) 提供种子和磨损联动的参考。
+- [Apex Asset Studio](https://github.com/Prednoxx/Apex-Asset-Studio)、[LegionPlus](https://github.com/r-ex/LegionPlus) 与 [Apex Toolbox](https://github.com/Gl2imm/Apex-Toolbox) 用于对照发光、法线及表面通道。BladeLab 的配件、流光和磨损逻辑由项目内的 Three.js 网格与着色器生成。
 
 ## 选料 V5
 

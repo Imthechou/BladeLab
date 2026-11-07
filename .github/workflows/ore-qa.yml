@@ -7,6 +7,7 @@ on:
       - "forge.js"
       - "materials.js"
       - "blade-looks.js"
+      - "knife-details.js"
       - "ore-section.js"
       - "sound.js"
       - "index.html"
@@ -67,7 +68,7 @@ jobs:
           exit 1
       - name: Same-scene frame, input, layout, drawing and autosave comparison
         run: node scripts/qa-performance.mjs
-      - name: Render all 123 blade looks and verify ore, quality and layout inheritance
+      - name: Render 123 looks and verify refinement, fittings and archive parity
         run: node scripts/qa-blade-looks.mjs
       - name: Cold-load workshop and archive models at 1.6 Mbps
         run: node scripts/qa-blade-loading.mjs

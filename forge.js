@@ -139,9 +139,9 @@ export const FITS = [
   { id: 'walnut', role: '沉稳', name: '赤木束柄', parts: '胡桃木 · 铜色端箍', color: '#673424', accent: '#bc8555', grip: 1, delta: [0, 5, 0, 3, 2, 0] },
   { id: 'night', role: '轻巧', name: '夜行纤维', parts: '黑纤维 · 枪灰端箍', color: '#252c32', accent: '#687988', grip: 2, delta: [1, 0, 5, 3, 0, 0] },
   { id: 'ivory', role: '衬纹', name: '霜白骨柄', parts: '骨白握柄 · 雾银端箍', color: '#b5a889', accent: '#bfcbd2', grip: 3, delta: [0, 1, 0, 1, 5, 3] },
-  { id: 'copper', role: '沉稳', name: '炉心铜座', parts: '棕皮 · 赤铜端箍', color: '#694031', accent: '#d69e5b', grip: 2, delta: [6, 1, -2, 0, 2, 2] },
-  { id: 'ink', role: '轻巧', name: '墨蓝缠线', parts: '深蓝缠柄 · 冷银端箍', color: '#233b58', accent: '#82a4c3', grip: 3, delta: [0, 4, 4, 0, 1, 0] },
-  { id: 'jade', role: '衬纹', name: '苍玉包柄', parts: '黛绿握柄 · 玉色嵌线', color: '#31685a', accent: '#7eb8a2', grip: 1, delta: [-1, 0, 1, 2, 4, 5] },
+  { id: 'copper', role: '沉稳', name: '炉心铜座', parts: '缝线棕皮 · 赤铜端箍', color: '#694031', accent: '#d69e5b', grip: 4, delta: [6, 1, -2, 0, 2, 2] },
+  { id: 'ink', role: '轻巧', name: '墨蓝缠线', parts: '深蓝缠柄 · 冷银端箍', color: '#233b58', accent: '#82a4c3', grip: 5, delta: [0, 4, 4, 0, 1, 0] },
+  { id: 'jade', role: '衬纹', name: '苍玉包柄', parts: '黛绿握柄 · 玉色嵌线', color: '#31685a', accent: '#7eb8a2', grip: 6, delta: [-1, 0, 1, 2, 4, 5] },
 ];
 
 const anchors = [[6, 0], [10, .006], [14, .017], [18, .034], [22, .068], [25, .128], [27, .231], [30, .5], [35, .66], [40, .8], [45, .9]];

@@ -1,8 +1,9 @@
-import { sectionContour } from './ore-section.js?v=15';
-import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=15';
-import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=15';
+import { sectionContour } from './ore-section.js?v=16';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=16';
+import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=16';
 import { KNIFE_IDS, regionAt } from './regions.js?v=2';
-import { RenderBudget } from './render-budget.js?v=15';
+import { RenderBudget } from './render-budget.js?v=16';
+import { knifeDetails, makeFittingHardware } from './knife-details.js?v=16';
 
 const T = globalThis.THREE;
 const localAssets = new URL('./assets/', import.meta.url);
@@ -54,17 +55,30 @@ function coordinates(geometry, id) {
     maxY[k] = Math.max(maxY[k], y);
   }
   const attrib = new Float32Array(pos.count * 4);
+  const gripBounds = new T.Box3();
+  const point = new T.Vector3();
   let bladeRoot = 1;
-  const widthAt = (k, y) => clamp((y - minY[k]) / Math.max(.001, maxY[k] - minY[k]), 0, 1);
+  const sample = (values, u, fallback) => {
+    const n = u * binCount - .5;
+    const low = clamp(Math.floor(n), 0, binCount - 1);
+    const a = values[low], b = values[Math.min(low + 1, binCount - 1)];
+    if (!Number.isFinite(a)) return Number.isFinite(b) ? b : fallback;
+    return Number.isFinite(b) ? lerp(a, b, clamp(n - low, 0, 1)) : a;
+  };
+  const across = (u, y) => {
+    const bottom = sample(minY, u, min.y);
+    return clamp((y - bottom) / Math.max(.001, sample(maxY, u, max.y) - bottom), 0, 1);
+  };
   for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const t = along(x);
-    const across = widthAt(bin(x), pos.getY(i));
-    const { blade, grip } = region(x, pos.getY(i));
+    point.fromBufferAttribute(pos, i);
+    const t = along(point.x);
+    const v = across(t, point.y);
+    const { blade, grip } = region(point.x, point.y);
     if (blade > .60) bladeRoot = Math.min(bladeRoot, t);
-    const edgeDistance = doubleEdge.has(id) ? Math.min(across, 1 - across) : across;
+    if (grip > .95) gripBounds.expandByPoint(point);
+    const edgeDistance = doubleEdge.has(id) ? Math.min(v, 1 - v) : v;
     const sharp = clamp((.24 - edgeDistance) / .23, 0, 1) * blade * (id === 'blank' ? .23 : 1);
-    attrib.set([t, across, grip, sharp], i * 4);
+    attrib.set([t, v, grip, sharp], i * 4);
   }
   geometry.setAttribute('forgeCoord', new T.BufferAttribute(attrib, 4));
   const guides = minY.flatMap((bottom, index) => {
@@ -74,7 +88,9 @@ function coordinates(geometry, id) {
     return [.20, .50, .80].map(fraction => new T.Vector3(x, lerp(bottom, maxY[index], fraction), max.z * .50))
       .filter(point => region(point.x, point.y).blade > .60);
   });
-  return { guides, along, region, bladeRoot: bladeRoot < 1 ? bladeRoot : 0, across: (x, y) => widthAt(bin(x), y) };
+  return { guides, along, region, bladeRoot: bladeRoot < 1 ? bladeRoot : 0, across: (x, y) => across(along(x), y),
+    gripCenter: gripBounds.getCenter(new T.Vector3()),
+    crossSection: (u, v) => new T.Vector2(min.x + u * length, lerp(sample(minY, u, min.y), sample(maxY, u, max.y), v)) };
 }
 
 function oreSection(geometry, cut, crust = .5) {
@@ -234,6 +250,7 @@ export class ForgeStage {
     this.camera = new T.OrthographicCamera(-2, 2, 1.2, -1.2, .1, 20);
     this.camera.position.set(0, .53, 6);
     this.camera.lookAt(0, -.07, 0);
+    this.gripTarget = new T.Vector3();
     this.scene.environment = studio(this.renderer).texture;
     this.ambient=new T.HemisphereLight(0xd7e4ff,0x453025,.93);
     this.scene.add(this.ambient);
@@ -323,22 +340,51 @@ export class ForgeStage {
       const process = ore || id === 'molten';
       const coords = process ? null : coordinates(geometry, id);
       const uniforms = ore ? this.oreUniforms : id === 'molten' ? this.meltUniforms : surfaceUniforms();
-      if (coords) uniforms.fBladeRoot.value = coords.bladeRoot;
+      if (coords) {
+        uniforms.fBladeRoot.value = coords.bladeRoot;
+        if (knifeDetails[id]) uniforms.fGrind.value.fromArray(knifeDetails[id].grind);
+      }
       const material = ore ? makeOreMaterial(source.material, uniforms, id.split('_')[1]) :
         id === 'molten' ? makeMeltMaterial(uniforms) : makeBladeMaterial(source.material, uniforms, id === 'blank');
       const mesh = new T.Mesh(geometry, material);
       const asset = { mesh, coords, uniforms };
       this.cache.set(id, asset);
+      if (knifeDetails[id]) {
+        const knives = [...this.cache.keys()].filter(key => knifeDetails[key]);
+        let excess = knives.length - 5;
+        for (const key of knives) {
+          if (excess <= 0) break;
+          if (key === id || key === this.shown || key === this.want || key === this.warmingId) continue;
+          this.disposeAsset(key);
+          excess--;
+        }
+      }
       return asset;
     }).finally(() => this.pending.delete(id));
     this.pending.set(id, pending);
     return pending;
   }
 
+  disposeAsset(id) {
+    const item = this.cache.get(id);
+    const { material, geometry } = item.mesh;
+    geometry.dispose();
+    material.map?.dispose();
+    material.normalMap?.dispose();
+    material.roughnessMap?.dispose();
+    material.dispose();
+    item.hardware?.geometry.dispose();
+    item.hardware?.material.dispose();
+    item.uniforms.fMarks?.value.dispose();
+    this.cache.delete(id);
+    this.warmed.delete(id);
+  }
+
   async loadWorkshopModel(name, original) {
     if (typeof WebAssembly === 'object') {
       const packed = new URL('forge-models/' + name, localAssets);
-      this.decoder ??= import('./assets/vendor/meshopt_decoder.module.js?v=15').then(async ({ MeshoptDecoder }) => {
+      if (name.startsWith('knife_')) packed.searchParams.set('v', '16');
+      this.decoder ??= import('./assets/vendor/meshopt_decoder.module.js?v=16').then(async ({ MeshoptDecoder }) => {
         if (!MeshoptDecoder.supported) return false;
         await MeshoptDecoder.ready;
         this.loader.setMeshoptDecoder(MeshoptDecoder);
@@ -462,7 +508,7 @@ export class ForgeStage {
       if (this.busyForWarm()) { this.warmQueue.unshift(id); requeued = true; return; }
       const temporary = new T.Scene();
       temporary.environment = this.scene.environment;
-      const specimen = mesh.clone();
+      const specimen = mesh.clone(false);
       temporary.add(specimen);
       const target = this.warmScene(id);
       if (this.renderer.extensions.has('KHR_parallel_shader_compile')) await this.renderer.compileAsync(temporary, this.camera, target);
@@ -488,15 +534,7 @@ export class ForgeStage {
       const keep = new Set(['ore_river_0', oreModelId(run.ore), 'molten', 'blank', normal, ...rare, run.model, this.shown]);
       this.warmQueue = this.warmQueue.filter(id => keep.has(id));
       this.warmQueued = new Set([...this.warmQueue, ...(this.warmingId && keep.has(this.warmingId) ? [this.warmingId] : [])]);
-      for (const [id, item] of this.cache) {
-        if (keep.has(id)) continue;
-        item.mesh.geometry.dispose();
-        item.mesh.material.map?.dispose();
-        item.mesh.material.dispose();
-        item.uniforms.fMarks?.value.dispose();
-        this.cache.delete(id);
-        this.warmed.delete(id);
-      }
+      for (const id of this.cache.keys()) if (!keep.has(id)) this.disposeAsset(id);
       if (run.phase === 'reveal' || run.phase === 'refine') {
         for (const id of ['molten', 'blank', normal]) this.warm(id);
       } else if (run.phase === 'forge' && run.hits < 4) {
@@ -548,6 +586,7 @@ export class ForgeStage {
     this.invalidate(300);
     if (previous !== this.mode) {
       this.entered = performance.now();
+      this.setGripFocus(false);
       this.turnX = this.turnY = 0;
       if (this.mode !== 'broken') this.clearPieces();
       if (this.mode !== 'reveal') this.clearOrePieces();
@@ -618,6 +657,8 @@ export class ForgeStage {
     this.invalidate(300);
     const asset = this.cache.get(id);
     if (this.shown !== id) {
+      this.cache.delete(id);
+      this.cache.set(id, asset);
       if (isOreModel(this.shown)) {
         this.clearOrePieces();
         this.oreCutGeometry?.dispose();
@@ -636,6 +677,14 @@ export class ForgeStage {
     }
     if (asset.coords && this.run) {
       setSurface(asset.uniforms, this.run.ore ? this.run : {...this.run,ore:this.inspectedOre}, this.fit);
+      if (this.fit && knifeDetails[id] && asset.hardware === undefined) {
+        asset.hardware = makeFittingHardware(asset.mesh, asset.coords, knifeDetails[id].anchors);
+        if (asset.hardware) asset.mesh.add(asset.hardware);
+      }
+      if (asset.hardware) {
+        asset.hardware.visible = Boolean(this.fit);
+        if (this.fit) asset.hardware.material.color.set(this.fit.accent);
+      }
       if (this.lastImpact) {
         asset.uniforms.fHit.value.copy(this.lastImpact.local);
         if (performance.now() - this.bangedAt < 30) asset.uniforms.fPulse.value = Math.min(1.3, this.bangPower);
@@ -725,6 +774,13 @@ export class ForgeStage {
     this.turnY += dx * .016;
     this.turnX = clamp(this.turnX + dy * .012, -.9, .9);
     this.invalidate(180);
+  }
+
+  setGripFocus(enabled) {
+    this.gripFocus = enabled && this.mode === 'fit';
+    this.camera.zoom = this.gripFocus ? 2.35 : 1;
+    this.camera.updateProjectionMatrix();
+    this.invalidate(220);
   }
 
   project(world, rect) {
@@ -951,8 +1007,16 @@ export class ForgeStage {
     this.lampLight.intensity=lampCheck ? 34 : 0;
     this.flash.intensity = mode === 'reveal' ? revealFlash * 3.1 : impulse * (strikeAge < 33 ? 3.7 : 1.15);
     if (mode === 'reveal') this.flash.position.set(0, .1, .8);
-    this.camera.position.x = !this.reduceMotion && this.lastImpact?.large ? Math.sin(strikeAge / 19) * impulse * .035 : 0;
+    const cameraShake = !this.reduceMotion && this.lastImpact?.large ? Math.sin(strikeAge / 19) * impulse * .035 : 0;
+    this.camera.position.set(cameraShake, .53, 6);
     this.camera.updateMatrixWorld();
+    if (this.gripFocus && this.active?.coords) {
+      const target = this.mesh.localToWorld(this.gripTarget.copy(this.active.coords.gripCenter));
+      this.camera.worldToLocal(target);
+      this.camera.translateX(target.x);
+      this.camera.translateY(target.y);
+      this.camera.updateMatrixWorld();
+    }
     this.sweep.intensity = mode === 'reveal' ? revealFlash * 2.1 : inspect ? (mode === 'appraise' ? .50 + .62 * Math.exp(-elapsed / 520) : .61) : 0;
     this.sweep.position.x = mode === 'appraise' ? lerp(-2.8, 2.6, clamp(elapsed / 1500, 0, 1)) : .8;
     this.key.color.set(stone && mode !== 'refine' ? 0xe8efff : inspect ? 0xffead8 : 0xffcfad);

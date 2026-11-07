@@ -7,10 +7,10 @@
   <title>BladeLab · 锻刀工坊</title>
   <meta name="description" content="从一块未知的矿石，打出只属于这一炉的刀。">
   <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=15">
+  <link rel="stylesheet" href="styles.css?v=16">
   <script defer src="assets/vendor/three.bundle.js"></script>
   <script defer src="assets/vendor/three.addons.js"></script>
-  <script type="module" src="app.js?v=15"></script>
+  <script type="module" src="app.js?v=16"></script>
 </head>
 <body>
   <header class="header frame">
@@ -53,6 +53,9 @@
           </div>
         </div>
         <div class="ore-echo" id="ore-echo" aria-hidden="true"></div>
+        <button type="button" id="grip-focus" class="grip-focus" data-action="focus-grip" aria-pressed="false" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4.5 4.5M8 10.5h5m-2.5-2.5v5"/></svg><span>查看刀柄</span>
+        </button>
         <div class="stage-footer"><span id="stage-hint">拖动旋转检视</span><span class="stage-scale"><i></i> LIVE MODEL</span></div>
       </section>
 

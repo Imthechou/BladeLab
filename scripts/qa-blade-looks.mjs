@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
-import { FITS, LOOKS, buyOre, freshSave } from '../forge.js';
+import { FITS, LOOKS, appraise, buyOre, freshSave } from '../forge.js';
 import { KNIFE_IDS } from '../regions.js';
 
 const origin = process.env.QA_ORIGIN || 'http://127.0.0.1:8217/';
@@ -27,7 +27,7 @@ function sampleRun(slot, id, tier) {
 const browser = await chromium.launch({ headless: true,
   args: ['--enable-webgl', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
-const errors = [], samples = [], unreadable = [], modelRequests = [];
+const errors = [], samples = [], unreadable = [], modelRequests = [], roughness = {};
 page.on('request', request => {
   if (new URL(request.url()).pathname.endsWith('.glb')) modelRequests.push(request.url());
 });
@@ -44,32 +44,40 @@ try {
       '<script src="assets/vendor/three.bundle.js"></script><script src="assets/vendor/three.addons.js"></script>',
   }));
   await page.goto(url, { waitUntil: 'load' });
-  await page.evaluate(async ({ run, fit }) => {
-    const { ForgeStage } = await import('./stage.js?v=15');
+  await page.evaluate(async ({ run, kits }) => {
+    const { ForgeStage } = await import('./stage.js?v=16');
     const stage = new ForgeStage(document.querySelector('canvas'));
     stage.reduceMotion = true;
     const frames = new Map();
     const gl = stage.renderer.getContext();
-    window.captureBladeLook = async ({ key, run, compare, angle, time }) => {
-      stage.sync(run, run.ore, fit);
+    async function show(run, kit, close, angle, time) {
+      stage.sync(run, run.ore, kits.find(item => item.id === kit));
       await stage.load(run.model);
       stage.show(run.model);
+      stage.setGripFocus(close);
       stage.turnY = angle;
       await new Promise(requestAnimationFrame);
       stage.active.uniforms.fClock.value = time;
+    }
+    function readFrame() {
       const drawStart = performance.now();
       stage.renderer.render(stage.scene, stage.camera);
       const { width, height } = stage.canvas;
       const rgba = new Uint8Array(width * height * 4);
       gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
       const drawMs = +(performance.now() - drawStart).toFixed(2);
+      return { rgba, width, drawMs };
+    }
+    window.captureBladeLook = async ({ key, run, compare, angle, time, kit = 'night', close = false }) => {
+      await show(run, kit, close, angle, time);
+      const { rgba, width, drawMs } = readFrame();
       frames.set(key, rgba);
       const differences = compare.map(name => {
         const other = frames.get(name);
         let pixels = 0, noticeable = 0, sum = 0;
         // Compare the visible blade rather than the fitted handle or clear canvas.
         for (let i = 0; i < rgba.length; i += 4) {
-          if (rgba[i + 3] < 230 || other[i + 3] < 230 || i / 4 % width < width * .49) continue;
+          if (rgba[i + 3] < 230 || other[i + 3] < 230 || (!close && i / 4 % width < width * .54)) continue;
           const d = (Math.abs(rgba[i] - other[i]) + Math.abs(rgba[i + 1] - other[i + 1]) + Math.abs(rgba[i + 2] - other[i + 2])) / 3;
           pixels++;
           if (d >= 8) noticeable++;
@@ -78,21 +86,56 @@ try {
         return { from: name, pixels, mean: +(sum / Math.max(1, pixels)).toFixed(3),
           visible: +(noticeable / Math.max(1, pixels)).toFixed(3) };
       });
-      return { png: stage.canvas.toDataURL().split(',')[1], differences, drawMs,
-        programs: stage.renderer.info.programs.length };
+      return { png: stage.canvas.toDataURL().split(',')[1], differences, drawMs, calls: stage.renderer.info.render.calls,
+        programs: stage.renderer.info.programs.length, hardware: Boolean(stage.active.hardware?.visible) };
+    };
+    window.sampleRoughness = async ({ run, qualities }) => {
+      await show(run, 'night', false, 0, .82);
+      const material = stage.mesh.material;
+      const shader = material.onBeforeCompile, key = material.customProgramCacheKey;
+      material.onBeforeCompile = program => {
+        shader(program);
+        program.fragmentShader = program.fragmentShader.replace('#include <opaque_fragment>',
+          'outgoingLight = vec3(forgeRough);\n#include <opaque_fragment>');
+      };
+      material.customProgramCacheKey = () => key() + '-qa-roughness';
+      material.toneMapped = false;
+      material.needsUpdate = true;
+      const results = [];
+      try {
+        for (const quality of qualities) {
+          await show({ ...run, refinement: { quality } }, 'night', false, 0, .82);
+          const { rgba, width } = readFrame();
+          let total = 0, pixels = 0;
+          for (let i = 0; i < rgba.length; i += 4) {
+            if (rgba[i + 3] < 230 || i / 4 % width < width * .57) continue;
+            const value = rgba[i] / 255;
+            total += value <= .04045 ? value / 12.92 : Math.pow((value + .055) / 1.055, 2.4);
+            pixels++;
+          }
+          results.push({ quality, pixels, mean: +(total / pixels).toFixed(4) });
+        }
+      } finally {
+        material.onBeforeCompile = shader;
+        material.customProgramCacheKey = key;
+        material.toneMapped = true;
+        material.needsUpdate = true;
+      }
+      return results;
     };
     await stage.load(run.model);
-  }, { run: base, fit: FITS.find(fit => fit.id === 'night') });
+  }, { run: base, kits: FITS });
 
-  async function sample(key, run, compare = [], angle = 0, time = .82) {
-    const { png, differences, drawMs, programs } = await page.evaluate(args => window.captureBladeLook(args), { key, run, compare, angle, time });
+  async function sample(key, run, compare = [], angle = 0, time = .82, options = {}) {
+    const { png, ...render } = await page.evaluate(args => window.captureBladeLook(args), { key, run, compare, angle, time, ...options });
     await writeFile(`${out}/${key}.png`, Buffer.from(png, 'base64'));
-    const stats = { key, differences, drawMs, programs };
+    const stats = { key, ...render };
     samples.push(stats);
     return stats;
   }
 
   const reference = await sample('base', base);
+  assert.deepEqual(errors, [], 'reference blade shader must compile');
   const bare = structuredClone(base);
   bare.skin.metal = 'raw';
   await sample('raw', bare);
@@ -132,13 +175,48 @@ try {
   const variant = sampleRun('pattern', 'damascus', 1);
   variant.skin.variants.pattern = { id: 'damascus', layout: 2, seed: .816 };
   assert.ok((await sample('damascus-alternate', variant, ['pattern-damascus-1'])).differences[0].mean > 2);
+  const doppler = sampleRun('film', 'doppler', 3);
+  doppler.skin.variants.film = { id: 'doppler', layout: 0, seed: .076 };
+  assert.ok((await sample('doppler-alternate', doppler, ['film-doppler-3'])).differences[0].mean > 2);
+  const worn = sampleRun('film', 'oxide', 3);
+  worn.hits = 24;
+  worn.marks = Object.fromEntries([13, 14, 15, 16, 39, 40, 41, 42, 62, 63, 64].map(index => [index, 15]));
+  assert.ok((await sample('oxide-worn', worn, ['film-oxide-3'])).differences[0].mean > .25);
   await sample('four-slots-turned', full, [], .72);
   await sample('four-slots-animation', full, ['four-slots'], 0, 1.58);
-  for (const model of KNIFE_IDS) await sample('model-' + model, { ...full, model }, [], .18);
+  for (const id of variants.find(([slot]) => slot === 'fx')[1]) {
+    const frame = await sample('moving-' + id, sampleRun('fx', id, 3), ['fx-' + id + '-3'], 0, 1.58);
+    assert.ok(frame.differences[0].mean > .12, id + ' must visibly animate');
+  }
+  for (const model of KNIFE_IDS) {
+    const shape = await sample('model-' + model, { ...full, model }, [], .18);
+    assert.ok(shape.hardware && shape.calls <= 2, model + ' should fit its hardware in one draw');
+  }
+  const handles = [];
+  for (const { id } of FITS) {
+    const key = 'grip-' + id;
+    const row = await sample(key, full, handles, 0, .82, { kit: id, close: true });
+    assert.ok(row.hardware && row.differences.every(pair => pair.pixels > 2000 && pair.mean > 2), id + ' grip material');
+    handles.push(key);
+  }
+  await sample('assembled', { ...full, fit: 'walnut' }, [], 0, .82, { kit: 'walnut' });
+  const saved = freshSave(975);
+  saved.run = { ...full, fit: 'walnut' };
+  const record = appraise(saved);
+  const recalled = await sample('recalled', { ...JSON.parse(JSON.stringify(record)), phase: 'fit' }, ['assembled'], 0, .82, { kit: record.fit });
+  assert.equal(recalled.differences[0].mean, 0, 'recalled surface must match the assembled blade under identical light');
+  for (const [name, recipe] of Object.entries({ silver: base, pearl: sampleRun('metal', 'pearl', 1),
+    polishedFilm: sampleRun('film', 'silverline', 3), matteFilm: sampleRun('film', 'ceramic', 3) })) {
+    roughness[name] = await page.evaluate(args => window.sampleRoughness(args), { run: recipe, qualities: [24, 52, 73, 94] });
+    assert.ok(roughness[name].every((row, index, rows) => row.pixels > 1000 && (index === 0 || row.mean < rows[index - 1].mean - .01)),
+      name + ' must get finer through all four refinement bands');
+  }
+  assert.ok(roughness.pearl[3].mean > roughness.silver[3].mean + .08, 'high quality pearl steel should remain satin');
+  assert.ok(roughness.matteFilm[3].mean > roughness.polishedFilm[3].mean + .06, 'high quality films should retain their finish');
   assert.deepEqual(unreadable, [], 'every tier and every pair of first-tier styles must differ');
   assert.deepEqual(errors, []);
-  console.log('Real WebGL: 123 appearances on one loaded model/program, 12 shapes, and visible texture in four-slot layering');
+  console.log('Real WebGL: 123 appearances, 12 animated effects and knife shapes, six close-up fittings, refinement and archive parity');
 } finally {
-  await writeFile(`${out}/report.json`, JSON.stringify({ samples, unreadable, errors }, null, 2));
+  await writeFile(`${out}/report.json`, JSON.stringify({ samples, roughness, unreadable, errors }, null, 2));
   await browser.close();
 }
