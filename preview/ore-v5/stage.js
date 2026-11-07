@@ -310,7 +310,7 @@ export class ForgeStage {
   load(id) {
     if (this.cache.has(id)) return Promise.resolve(this.cache.get(id));
     if (this.pending.has(id)) return this.pending.get(id);
-    const url = new URL(`./assets/models/${modelFiles[id]}.glb`, import.meta.url);
+    const url = new URL(`${isOreModel(id) ? './' : '../../'}assets/models/${modelFiles[id]}.glb`, import.meta.url);
     const pending = this.loader.loadAsync(url.href).then(({ scene }) => {
       let source;
       scene.traverse(obj => { if (obj.isMesh && !source) source = obj; });

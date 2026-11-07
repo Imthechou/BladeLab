@@ -4,9 +4,9 @@ import {
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
 } from './forge.js?v=14';
-import { ForgeStage } from './stage.js?v=14';
+import { ForgeStage } from './stage.js?v=14.1';
 import { ForgeSound } from './sound.js?v=14';
-import { createQaSession } from './qa.js?v=14';
+import { createQaSession } from './qa.js?v=14.1';
 
 const get = id => document.getElementById(id);
 const canvas = get('scene');
