@@ -259,7 +259,7 @@ void lookFilm(int style, float tier, vec2 uv, float view, float edge, vec2 relie
     prism += mid*smoothstep(-.09,.13,p.x)*1.30 + high*smoothstep(.02,.22,p.y)*(1.75+view*4.);
     float ribbon = 1.-smoothstep(.16,.43,abs(center));
     coat = vec3(.31) + (.19+.09*ribbon)*cos(prism+vec3(0.,2.094,4.188));
-    cover = .25+.75*ribbon;
+    cover = .24+.70*ribbon;
     gloss = mix(.34,.143,ribbon);
   } else if (style == ${film.gold}) {
     float sunset = uv.x + (.5-fFilmLayout.x)*.52 + .034*sin(phase) + p.y*(.12+.39*mid);
@@ -318,7 +318,7 @@ void lookFilm(int style, float tier, vec2 uv, float view, float edge, vec2 relie
     coat = mix(coat,vec3(.16,.47,.31),rim*mid*.59);
     coat += vec3(.31,.151,.047)*rim*high*(.36+.64*smoothstep(.08,.55,view+.12));
     gloss = mix(.49,.196,island);
-    cover = .92;
+    cover = .81+.13*island;
   } else if (style == ${film.ceramic}) {
     float boundary = p.y + p.x*.28 + .19 + .032*sin(p.x*19.+phase);
     float porcelain = smoothstep(-.043,.030,boundary);
@@ -349,9 +349,9 @@ void lookFilm(int style, float tier, vec2 uv, float view, float edge, vec2 relie
   }
 
   coat = mineralAccent(coat, inherit) * (1. - relief.x*.56);
-  // The film tints the metal reflection. Foil edges keep some of their
-  // original steel and the recessed lines keep their roughness.
-  float blend = clamp(cover*(.65+.07*mid+.052*high)*(1.-focus*.30)*(1.-relief.y*.44)*(1.-wear*.75),0.,.77);
+  // The color film thins over both bright engraving and dark cut grooves.
+  float etching = max(relief.y,relief.x*.57);
+  float blend = clamp(cover*(.65+.07*mid+.052*high)*(1.-focus*.27)*(1.-etching*.52)*(1.-wear*.75),0.,.77);
   steel = mix(steel,coat,blend);
   rough = mix(rough,gloss+relief.x*.084-relief.y*.041,blend);
 }
@@ -397,16 +397,16 @@ vec4 lookEffect(int style, float tier, vec2 uv, float edge, float coarse, float 
     light = mix(vec3(.115,.78,.88),vec3(.75,.23,.92),smoothstep(.14,.92,uv.x+high*ribbon*.24+head*.24));
     inherit = .42;
   } else if (style == ${fx.tip}) {
-    vec2 q = (uv-vec2(.82 + p.x*.065,.51+p.y*.08))*vec2(1.,.38);
+    vec2 q = (uv-vec2(.909+p.x*.035,.51+p.y*.065))*vec2(1.,.45);
     float ray = atan(q.y,q.x+.00001)+.11*sin(time*1.6);
     float lengthToTip = length(q);
-    float star = lookLine(sin(ray*2.)*lengthToTip,.018);
-    star = max(star,mid*lookLine(sin(ray*4.)*lengthToTip,.011)*.75);
+    float star = lookLine(sin(ray*2.)*lengthToTip,.013);
+    star = max(star,mid*lookLine(sin(ray*4.)*lengthToTip,.008)*.67);
     float burst = .38+.62*wash;
-    float reach = .131+mid*.051+high*.077*burst;
-    motif = star*(1.-smoothstep(.059,reach,lengthToTip))*.97;
+    float reach = .100+mid*.034+high*.042*burst;
+    motif = star*(1.-smoothstep(.046,reach,lengthToTip))*.97;
     motion = motif*(.32+.68*wash);
-    float rays = lookLine(abs(q.y)-abs(q.x)*.28,.013)*(1.-smoothstep(.095,.232,lengthToTip));
+    float rays = lookLine(abs(q.y)-abs(q.x)*.24,.009)*(1.-smoothstep(.061,.153,lengthToTip));
     float spark = 1.-smoothstep(.012,.048,lengthToTip);
     accent = high*max(spark,rays*.90)*burst;
     light = mix(vec3(.91,.49,.22),vec3(1.,.84,.55),spark*.53+burst*.38);
@@ -490,7 +490,7 @@ vec4 lookEffect(int style, float tier, vec2 uv, float edge, float coarse, float 
   }
 
   float clarity = mix(.54+.33*smoothstep(.20,.68,coarse),1.,fRefine);
-  float strength = min(.65, motif*.25 + motion*.36*clarity + accent*.30) * smoothstep(-.01,.085,uv.x);
+  float strength = min(.62, motif*.25 + motion*.36*clarity + accent*.30) * (.66+.34*smoothstep(.01,.085,uv.x));
   vec3 glow = mineralAccent(light,inherit);
   glow = mix(glow,vec3(.91,.92,1.),min(.28,accent*.35));
   return vec4(glow*strength,clamp(strength*1.55,0.,1.));
