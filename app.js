@@ -4,7 +4,7 @@ import {
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
 } from './forge.js?v=16';
-import { ForgeStage } from './stage.js?v=16';
+import { ForgeStage } from './stage.js?v=17';
 import { ForgeSound } from './sound.js?v=16';
 import { createQaSession } from './qa.js?v=16';
 

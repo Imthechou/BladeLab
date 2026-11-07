@@ -1,5 +1,5 @@
 import { MARK_WIDTH, MARK_HEIGHT, mineralHeritage, lookVariant } from './forge.js?v=16';
-import { bladeLooksGLSL, lookCodes } from './blade-looks.js?v=16';
+import { bladeLooksGLSL, lookCodes } from './blade-looks.js?v=17';
 
 const T = globalThis.THREE;
 const layoutUniforms = { metal: 'fMetalLayout', pattern: 'fPatternLayout', film: 'fFilmLayout', fx: 'fFxLayout' };
@@ -222,11 +222,6 @@ vec3 bladeGrind(vec2 uv, float coarse) {
 
 vec3 gripFinish(vec2 uv, vec3 base, vec3 atlas, out float rough, out float metal, out float height) {
   float source = dot(base,vec3(.213,.715,.072));
-  rough = mix(.40,.69,atlas.g);
-  metal = atlas.b*.68;
-  height = 0.;
-  if (fGripStyle < .5) return base * mix(.78,1.,atlas.r);
-
   float coarse = forgeNoise(uv*vec2(6.,11.)+fSeed*7.);
   float detail = .82+.30*smoothstep(.02,.43,source);
   float grain = 0., figure = 1.;
@@ -254,7 +249,7 @@ vec3 gripFinish(vec2 uv, vec3 base, vec3 atlas, out float rough, out float metal
   } else if (fGripStyle == 4.) {
     float seam = abs(uv.y-.5)-.29;
     float spacing = uv.x*20.+uv.y*.73;
-    float stitches = lookLine(seam+.086*(fract(spacing+.5)-.5),.010)*forgeBand(spacing,.19);
+    float stitches = lookLine(seam+.086*(fract(spacing)-.5),.010)*forgeBand(spacing,.19);
     float hide = forgeNoise(uv*vec2(52.,35.));
     grain = stitches - hide*.37;
     tint = mix(fGrip,fGuard,stitches*.45);
@@ -289,9 +284,11 @@ vec3 gripFinish(vec2 uv, vec3 base, vec3 atlas, out float rough, out float metal
 const body = `
 vec2 fp = vec2(vForgePos.x, vForgePos.y + abs(vForgePos.z)*.26);
 vec2 st = vForge.xy;
-float grip = smoothstep(.025,.96,vForge.z);
+float grip = step(.5,fGripStyle)*smoothstep(.15,.88,vForge.z);
 float edge = vForge.w;
-vec2 uv = vec2((st.x-fBladeRoot)/max(.34,1.-fBladeRoot), st.y);
+// Keep the forged surface in whole-knife coordinates, even after a fitting
+// hides the handle. The grind uses the blade section's own coordinates.
+vec2 uv = st;
 float view = 1.-clamp(abs(dot(normalize(vForgeNormal),normalize(vViewPosition))),0.,1.);
 float grazing = pow(view,2.7);
 float bend = fSeed*6.28318;
@@ -355,7 +352,10 @@ if (fCodes.y > .5) {
   forgeRough = mix(baseRough,forgeRough,visibility.y);
   seam *= visibility.y;
 }
-if (fxStyle > 0) special = lookEffect(fxStyle,ranks.w,uv,edge,coarse,seam)*visibility.w;
+if (fxStyle > 0) {
+  float outline = (1.-smoothstep(.024,.18,min(st.y,1.-st.y)))*vForge.z*.78;
+  special = lookEffect(fxStyle,ranks.w,uv,max(edge,outline),coarse,seam)*visibility.w;
+}
 if (fCodes.z > .5) {
   vec3 base = steel;
   float baseRough = forgeRough;
@@ -363,7 +363,8 @@ if (fCodes.z > .5) {
   steel = mix(base,steel,visibility.z);
   forgeRough = mix(baseRough,forgeRough,visibility.z);
 }
-grind = bladeGrind(uv,coarse);
+vec2 bladeUv = vec2((st.x-fBladeRoot)/max(.34,1.-fBladeRoot),st.y);
+grind = bladeGrind(bladeUv,coarse);
 steel *= 1.-grind.x*.18;
 steel = mix(steel, steel*.71+vec3(.29,.30,.31), grind.y*(.28+.19*grazing));
 forgeRough += grind.x*.077 - grind.y*.039 + wear*.025;
@@ -372,7 +373,7 @@ steel = mix(steel,vec3(.64,.68,.71)*(1.-.22*grazing),edge*(.22+.14*fRefine));
 forgeRough = mix(forgeRough, .14+forgeRough*.36, edge*.54);
 float pulse = fPulse * exp(-abs(vForgePos.x-fHit.x)*9. - abs(vForgePos.y-fHit.y)*20.);
 vec3 aura = mineralAccent(vec3(.28,.67,.86),.27);
-vec3 forgeGlow = special.rgb;
+vec3 forgeGlow = special.rgb * (1.-.26*max(relief.y,relief.x*.48));
 float grain = forgeBand(st.y*31. + st.x*(3.+mark.g*7.) + coarse*.3,.11);
 steel *= 1. + mark.r * (.11 + (grain-.36)*.16);
 forgeRough -= mark.r*.108;
@@ -394,12 +395,14 @@ forgeRough += inclusions*(.057+.12*(1.-fRefine));
 float forgeHeight = .00047*(grind.z + relief.y*.72 - relief.x*.46) - inclusions*.00058;
 float hiltRough = .55, hiltMetal = .13, hiltHeight = 0.;
 vec3 hilt = diffuseColor.rgb;
+if (fGripStyle > .5) {
 #ifdef USE_ROUGHNESSMAP
-vec3 atlas = texture2D(roughnessMap, vRoughnessMapUv).rgb;
+  vec3 atlas = texture2D(roughnessMap, vRoughnessMapUv).rgb;
 #else
-vec3 atlas = vec3(1.,.56,.14);
+  vec3 atlas = vec3(1.,.56,.14);
 #endif
-if (grip > .001) hilt = gripFinish(vec2(st.x/max(.17,fBladeRoot),st.y),hilt,atlas,hiltRough,hiltMetal,hiltHeight);
+  if (grip > .001) hilt = gripFinish(vec2(st.x/max(.17,fBladeRoot),st.y),hilt,atlas,hiltRough,hiltMetal,hiltHeight);
+}
 diffuseColor.rgb = mix(steel,hilt,grip);
 forgeRough = clamp(mix(forgeRough,hiltRough,grip),.118,.81);
 forgeMetal = mix(forgeMetal,hiltMetal,grip);
@@ -419,11 +422,12 @@ export function makeBladeMaterial(original, uniforms, raw) {
   });
   material.userData.forge = uniforms;
   if (!raw) material.defines = { ...material.defines, BLADE_DECORATION: 1 };
-  material.customProgramCacheKey = () => raw ? 'blade-lab-billet-16' : 'blade-lab-looks-16';
+  material.customProgramCacheKey = () => raw ? 'blade-lab-billet-17' : 'blade-lab-looks-17';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = vertexHead + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + vertexBody);
     shader.fragmentShader = fragmentHead + geology + bladeLooksGLSL + fittings + shader.fragmentShader
+      .replace('#include <map_fragment>', 'if (fGripStyle > .5) {\n#include <map_fragment>\n}')
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + body)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = forgeRough;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = forgeMetal;')

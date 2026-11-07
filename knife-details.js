@@ -6,16 +6,16 @@ const fuller = 1, ridge = 2, hamon = 3, spine = 4;
 // the whole knife's length and the local handle width, followed by pin radius.
 export const knifeDetails = {
   balisong: { grind: [spine, .74, .11], anchors: [[.08, .20, .010], [.08, .80, .010], [.39, .25, .016], [.39, .73, .016]] },
-  bayonet: { grind: [fuller, .67, .075], anchors: [[.065, .48, .012], [.33, .52, .011]] },
-  folding: { grind: [spine, .72, .094], anchors: [[.14, .50, .012], [.42, .49, .023]] },
-  gladius: { grind: [ridge, .51, .066], anchors: [[.13, .48, .012], [.30, .53, .012], [.44, .48, .014]] },
-  karambit: { grind: [spine, .76, .11], anchors: [[.25, .56, .011], [.39, .52, .013]] },
+  bayonet: { grind: [fuller, .67, .075], anchors: [[.048, .48, .012], [.33, .52, .011]] },
+  folding: { grind: [spine, .72, .094], anchors: [[.102, .62, .013], [.42, .52, .022]] },
+  gladius: { grind: [ridge, .51, .066], anchors: [[.12, .64, .014], [.325, .69, .014], [.400, .40, .012]] },
+  karambit: { grind: [spine, .76, .11], anchors: [[.277, .44, .012], [.384, .39, .013]] },
   kris: { grind: [ridge, .50, .083], anchors: [[.064, .50, .010], [.24, .48, .011]] },
-  machete: { grind: [fuller, .76, .061], anchors: [[.091, .50, .013], [.19, .50, .011], [.27, .52, .012]] },
+  machete: { grind: [fuller, .76, .061], anchors: [[.069, .51, .015], [.187, .49, .014], [.303, .63, .013]] },
   saber: { grind: [hamon, .24, .085], anchors: [[.066, .46, .010], [.30, .48, .011]] },
   skull: { grind: [ridge, .52, .048], anchors: [[.12, .51, .012], [.25, .48, .011]] },
-  straight: { grind: [fuller, .68, .066], anchors: [[.094, .55, .011], [.226, .50, .011], [.342, .51, .012]] },
-  survival: { grind: [spine, .72, .135], anchors: [[.14, .47, .013], [.29, .57, .012], [.39, .58, .012]] },
+  straight: { grind: [fuller, .68, .066], anchors: [[.077, .56, .013], [.223, .51, .013], [.356, .54, .013]] },
+  survival: { grind: [spine, .72, .135], anchors: [[.094, .62, .013], [.293, .74, .013]] },
   tangdao: { grind: [hamon, .27, .061], anchors: [[.076, .51, .010], [.27, .48, .010]] },
 };
 
@@ -67,7 +67,7 @@ export function makeFittingHardware(mesh, coordinates, anchors) {
   geometry.setAttribute('position', new T.Float32BufferAttribute(position, 3));
   geometry.setAttribute('normal', new T.Float32BufferAttribute(normal, 3));
   geometry.setAttribute('color', new T.Float32BufferAttribute(color, 3));
-  const material = new T.MeshStandardMaterial({ vertexColors: true, metalness: .78, roughness: .31, envMapIntensity: 1.14 });
+  const material = new T.MeshStandardMaterial({ vertexColors: true, metalness: .78, roughness: .34, envMapIntensity: 1.08 });
   const hardware = new T.Mesh(geometry, material);
   hardware.name = 'fitting-hardware';
   return hardware;

@@ -11,7 +11,7 @@ await mkdir(out, { recursive: true });
 if (process.env.QA_ORIGIN) {
   let ready = false;
   for (let i = 0; i < 40 && !ready; i++) {
-    try { ready = (await (await fetch(root + '?refining-revision=' + Date.now())).text()).includes('app.js?v=16'); } catch {}
+    try { ready = (await (await fetch(root + '?refining-revision=' + Date.now())).text()).includes('app.js?v=17'); } catch {}
     if (!ready) await new Promise(resolve => setTimeout(resolve, 3000));
   }
   assert.ok(ready, 'published V15 must be active before browser acceptance');
@@ -38,7 +38,7 @@ async function openFurnace(width = 390, lowWallet = false) {
   await page.addInitScript(({ key, save }) => {
     if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(save));
   }, { key: storageKey, save });
-  await page.goto(root + '?v=16', { waitUntil: 'load' });
+  await page.goto(root + '?v=17', { waitUntil: 'load' });
   await page.waitForSelector('#heat-quality');
   assert.equal(await mode(), 'refine');
   assert.equal(await page.locator('#pour-button').isDisabled(), true);

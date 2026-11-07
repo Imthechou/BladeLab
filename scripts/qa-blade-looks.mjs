@@ -45,7 +45,7 @@ try {
   }));
   await page.goto(url, { waitUntil: 'load' });
   await page.evaluate(async ({ run, kits }) => {
-    const { ForgeStage } = await import('./stage.js?v=16');
+    const { ForgeStage } = await import('./stage.js?v=17');
     const stage = new ForgeStage(document.querySelector('canvas'));
     stage.reduceMotion = true;
     const frames = new Map();
@@ -68,16 +68,17 @@ try {
       const drawMs = +(performance.now() - drawStart).toFixed(2);
       return { rgba, width, drawMs };
     }
-    window.captureBladeLook = async ({ key, run, compare, angle, time, kit = 'night', close = false }) => {
+    window.captureBladeLook = async ({ key, run, compare, angle, time, kit = 'night', close = false, part = close ? 'whole' : 'blade' }) => {
       await show(run, kit, close, angle, time);
+      if (run.phase === 'forge') stage.anvil.visible = stage.hammer.visible = false;
       const { rgba, width, drawMs } = readFrame();
       frames.set(key, rgba);
       const differences = compare.map(name => {
         const other = frames.get(name);
         let pixels = 0, noticeable = 0, sum = 0;
-        // Compare the visible blade rather than the fitted handle or clear canvas.
         for (let i = 0; i < rgba.length; i += 4) {
-          if (rgba[i + 3] < 230 || other[i + 3] < 230 || (!close && i / 4 % width < width * .54)) continue;
+          const x = i / 4 % width / width;
+          if (rgba[i + 3] < 230 || other[i + 3] < 230 || (part === 'blade' && x < .54) || (part === 'grip' && x > .40)) continue;
           const d = (Math.abs(rgba[i] - other[i]) + Math.abs(rgba[i + 1] - other[i + 1]) + Math.abs(rgba[i + 2] - other[i + 2])) / 3;
           pixels++;
           if (d >= 8) noticeable++;
@@ -199,7 +200,31 @@ try {
     assert.ok(row.hardware && row.differences.every(pair => pair.pixels > 2000 && pair.mean > 2), id + ' grip material');
     handles.push(key);
   }
-  await sample('assembled', { ...full, fit: 'walnut' }, [], 0, .82, { kit: 'walnut' });
+  const forge = { ...full, phase: 'forge', seed: undefined };
+  const forged = await sample('whole-knife-forged', forge, [], 0, .82, { part: 'grip' });
+  assert.equal(forged.hardware, false, 'forge must ignore a fitting passed in from a prior view');
+  for (const [slot, empty] of Object.entries({ metal: 'raw', pattern: 'none', film: 'none', fx: 'none' })) {
+    const without = { ...forge, skin: { ...forge.skin, [slot]: empty } };
+    const { differences: [change] } = await sample('forged-without-' + slot, without, ['whole-knife-forged'], 0, .82, { part: 'grip' });
+    assert.ok(change.pixels > 500 && change.mean > .30, slot + ' must be visible on the unassembled handle');
+  }
+  for (const [pattern, film, fx] of [['damascus', 'rainbow', 'aurora'], ['strata', 'verdigris', 'arc']]) {
+    const stack = { ...full, skin: { ...full.skin, pattern, film, fx } };
+    const key = 'stack-' + film;
+    await sample(key, stack);
+    const without = { ...stack, skin: { ...stack.skin, pattern: 'none' } };
+    const row = await sample(key + '-without-pattern', without, [key]);
+    assert.ok(row.differences[0].mean > 2, film + ' must preserve engraving in a four-slot stack');
+  }
+  const bareFitting = await sample('before-fitting', full, [], 0, .82, { kit: null });
+  assert.equal(bareFitting.hardware, false);
+  const assembled = await sample('assembled', { ...full, fit: 'walnut' }, ['before-fitting'], 0, .82, { kit: 'walnut' });
+  assert.ok(assembled.hardware);
+  assert.equal(assembled.differences[0].mean, 0, 'selecting a grip must leave the blade pixels identical');
+  const removed = await sample('fitting-removed', full, ['before-fitting', 'assembled'], 0, .82, { kit: null, part: 'grip' });
+  assert.equal(removed.hardware, false);
+  assert.equal(removed.differences[0].mean, 0, 'removing a grip must restore the forged handle');
+  assert.ok(removed.differences[1].mean > 2, 'selecting a grip must visibly replace the handle');
   const saved = freshSave(975);
   saved.run = { ...full, fit: 'walnut' };
   const record = appraise(saved);
@@ -215,7 +240,7 @@ try {
   assert.ok(roughness.matteFilm[3].mean > roughness.polishedFilm[3].mean + .06, 'high quality films should retain their finish');
   assert.deepEqual(unreadable, [], 'every tier and every pair of first-tier styles must differ');
   assert.deepEqual(errors, []);
-  console.log('Real WebGL: 123 appearances, 12 animated effects and knife shapes, six close-up fittings, refinement and archive parity');
+  console.log('Real WebGL: 123 appearances, 12 animated effects and knife shapes, whole-knife forging, six grip-only fittings and archive parity');
 } finally {
   await writeFile(`${out}/report.json`, JSON.stringify({ samples, roughness, unreadable, errors }, null, 2));
   await browser.close();

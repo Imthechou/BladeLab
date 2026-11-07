@@ -23,7 +23,7 @@ const image = name => page.screenshot({ path: `${output}/${name}.png`, animation
 const step = () => page.locator('#stage').getAttribute('data-mode');
 const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 try {
-  await page.goto(origin+'?v=16', { waitUntil: 'load' });
+  await page.goto(origin+'?v=17', { waitUntil: 'load' });
   await page.waitForSelector('.ore-grid .ore-card');
   await page.waitForFunction(()=>[...document.querySelectorAll('.ore-thumbnail img')].every(img=>img.naturalWidth>0));
   await page.waitForTimeout(600);
@@ -132,7 +132,13 @@ try {
   await image('05-anvil-375');
   await page.locator('[data-action="finish"]').click();
   await page.waitForFunction(() => document.querySelector('#stage')?.dataset.mode === 'fit', { timeout: 6000 });
-  await page.locator('.fit-card').first().click();
+  const fitCard = page.locator('.fit-card').first();
+  assert.equal(await fitCard.getAttribute('aria-pressed'), 'false');
+  await image('05a-forged-before-fitting-375');
+  await fitCard.click();
+  await fitCard.click();
+  assert.equal(await fitCard.getAttribute('aria-pressed'), 'false');
+  await fitCard.click();
   await page.locator('#grip-focus').click();
   assert.equal(await page.locator('#grip-focus').getAttribute('aria-pressed'), 'true');
   await page.waitForTimeout(250);

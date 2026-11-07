@@ -1,9 +1,9 @@
 import { sectionContour } from './ore-section.js?v=16';
-import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=16';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=17';
 import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=16';
 import { KNIFE_IDS, regionAt } from './regions.js?v=2';
 import { RenderBudget } from './render-budget.js?v=16';
-import { knifeDetails, makeFittingHardware } from './knife-details.js?v=16';
+import { knifeDetails, makeFittingHardware } from './knife-details.js?v=17';
 
 const T = globalThis.THREE;
 const localAssets = new URL('./assets/', import.meta.url);
@@ -572,7 +572,7 @@ export class ForgeStage {
 
   sync(run, ore, fit) {
     this.run = run;
-    this.fit = fit;
+    this.fit = run.phase === 'fit' || run.phase === 'appraise' ? fit : null;
     const previous = this.mode;
     this.mode = run.phase;
     const failedRefining = run.last?.type === 'refine-fail';
