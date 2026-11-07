@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BladeLab · 矿石造型与材质检视</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,"Microsoft YaHei",sans-serif;background:#161719;color:#eee9e1}
+*{box-sizing:border-box}body{margin:0 auto;max-width:960px;padding:15px}
+h1{font-size:24px;margin:5px 0}p{font-size:12px;color:#aaa8a2;line-height:1.7;margin:8px 0 13px}
+.scene{height:clamp(270px,50dvh,440px);position:relative;border:1px solid #41454a;border-radius:12px;background:radial-gradient(ellipse at center,#303139,#191b20 67%,#111314);overflow:hidden}
+canvas{width:100%;height:100%;display:block;touch-action:none}
+.stage-label{position:absolute;left:15px;top:13px;pointer-events:none;letter-spacing:.08em;color:#cfd0ce;font-size:11px}
+.controls{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 14px}
+button{background:#27292b;color:#dad5ce;border:1px solid #4b4a46;border-radius:8px;padding:9px 12px;min-height:40px;font:inherit;font-size:12px;cursor:pointer}
+button[aria-pressed="true"]{border-color:#f0b387;background:#43352b;color:#ffe3ca}
+section{border:1px solid #3c3b3b;border-radius:12px;padding:12px;margin-top:12px}
+h2{font-size:13px;margin:0 0 9px;color:#d5bcaa}
+.materials{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.materials button{display:flex;align-items:center;gap:8px;text-align:left;min-width:0;padding:9px 7px}
+.materials i{width:19px;height:22px;border-radius:5px;flex:0 0 auto;background:linear-gradient(145deg,var(--m1),var(--m2));border:1px solid #aaa4}
+.materials span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;font-size:11px;color:#bcb3ab}
+#info span{padding:8px;background:#242628;border:1px solid #35383a;border-radius:7px}
+aside{font-size:11px;color:#918f87;margin:16px 0 2px}
+@media(min-width:700px){.materials{grid-template-columns:repeat(4,minmax(0,1fr))}}
+</style>
+<script defer src="assets/vendor/three.bundle.js"></script>
+<script defer src="assets/vendor/three.addons.js"></script>
+</head><body>
+<h1>原矿造型 · 实物检视台</h1>
+<p>5种基础造型 × 每种3个轻变体，共20个独立GLB；下方提供12种矿石材质与五项观察信息。切开为示意品质，不消耗信用点。拖动3D矿石可旋转。</p>
+<div class="scene"><canvas id="ore-canvas"></canvas><div class="stage-label">矿石模型 / 真实 WebGL</div></div>
+<section><h2>基础矿种 · 5</h2><div id="families" class="controls"></div>
+<h2>同种造型变体 · 原型 + 3</h2><div id="variants" class="controls"></div></section>
+<section><h2>可用表面材质 · 12</h2><div id="materials" class="materials"></div></section>
+<section><h2>矿芯底色 · 独立于矿种</h2><div id="tints" class="materials"></div><div id="optics" class="controls"></div></section>
+<section><h2>开料 / 观察</h2><div class="controls" id="grading"></div><div id="info"></div></section>
+<aside>本页为美术验收工具，素材与实际锻造使用相同的 GLB、Shader 和切面代码。保存的成刀不受此页面影响。</aside>
+<script type="module">
+import { FAMILIES, ORE_VARIANTS, ORE_MATERIALS, ORE_TINTS, ORE_EXPOSURES, oreOptics, oreMaterialOf, oreSignals, freshRun } from './forge.js?v=16';
+import { ForgeStage } from './stage.js?v=17';
+const stage = new ForgeStage(document.getElementById('ore-canvas'));
+const run = freshRun(99);
+let family='river',variant=0,material='river_gray',grade=2,open=false;
+let tint='natural',exposure='open',clarity=58,inspection='natural';
+const el=id=>document.getElementById(id);
+const node=(action,id,title,pressed=false)=>`<button data-action="${action}" data-id="${id}" type="button" aria-pressed="${pressed}">${title}</button>`;
+let startX=0,startY=0;
+const canvas=el('ore-canvas');
+canvas.addEventListener('pointerdown',event=>{startX=event.clientX;startY=event.clientY;canvas.setPointerCapture(event.pointerId);});
+canvas.addEventListener('pointermove',event=>{if(!canvas.hasPointerCapture(event.pointerId))return;
+stage.turn(event.clientX-startX,event.clientY-startY);startX=event.clientX;startY=event.clientY;});
+const select=()=>{
+const obj={id:7,family,variant,material,tint:tint==='natural'?undefined:tint,exposure,clarity,figure:.54,grade,vein:grade===2?82:grade===1?62:43,flaw:grade===2?17:grade===1?37:59,
+ luster:grade===2?78:grade===1?54:35,density:grade===2?86:grade===1?61:37,crust:grade===2?25:grade===1?48:72,
+ purity:grade===2?88:grade===1?70:49,stability:grade===2?78:grade===1?61:44,clue:1,tier:2,price:32,number:'08'};
+const rock=oreMaterialOf(obj),signs=oreSignals(obj),optical=oreOptics(obj);
+run.phase=open?'reveal':'ore';run.ore=open?obj:null;
+stage.sync(run,obj,null);if(!open)stage.setInspection(inspection);
+el('families').innerHTML=FAMILIES.map(f=>node('family',f.id,f.name,f.id===family)).join('');
+el('variants').innerHTML=ORE_VARIANTS.map((v,i)=>node('variant',i,v,i===variant)).join('');
+el('materials').innerHTML=ORE_MATERIALS.map(m=>`<button data-action="material" data-id="${m.id}" aria-pressed="${m.id===material}">
+<i style="--m1:${m.base};--m2:${m.vein}"></i><span>${m.name}</span></button>`).join('');
+el('tints').innerHTML=node('tint','natural','原矿底色',tint==='natural')+ORE_TINTS.map(t=>`<button data-action="tint" data-id="${t.id}" aria-pressed="${t.id===tint}"><i style="--m1:${t.core};--m2:${t.steel}"></i><span>${t.name}</span></button>`).join('');
+el('optics').innerHTML=ORE_EXPOSURES.map(e=>node('exposure',e.id,e.name,e.id===exposure)).join('')+[15,55,90].map(c=>node('clarity',c,c<35?'浑浊':c<70?'雾润':'清透',c===clarity)).join('');
+el('grading').innerHTML=['natural','lamp'].map((id,i)=>node('inspection',id,['自然光','打灯检视'][i],!open && inspection===id)).join('')+node('toggle','',open?'合上原石':'切开检视',open)+node('steel','','同源刀身',stage.previewSteel)+[0,1,2].map(g=>node('grade',g,['普通','良质','稀质'][g],g===grade)).join('');
+el('info').innerHTML=`<span>材质：${rock.name}</span><span>造型：${ORE_VARIANTS[variant]}</span>`+
+ `<span>矿脉：${signs.vein}</span><span>裂隙：${signs.shell}</span><span>亮点：${signs.glow}</span>`+
+ `<span>密实：${signs.density}</span><span>石皮：${signs.crust}</span><span>底色：${optical.name}</span><span>透澈：${optical.clarityName}</span>`;
+};
+document.addEventListener('click',event=>{
+const b=event.target.closest('button[data-action]');if(!b)return;
+switch(b.dataset.action){
+ case 'family':family=b.dataset.id;material=ORE_MATERIALS.find(x=>x.family===family).id;open=false;break;
+ case 'variant':variant=Number(b.dataset.id);open=false;break;
+ case 'material':material=b.dataset.id;family=ORE_MATERIALS.find(x=>x.id===material).family;open=false;break;
+ case 'tint':tint=b.dataset.id;break;
+ case 'exposure':exposure=b.dataset.id;break;
+ case 'clarity':clarity=Number(b.dataset.id);break;
+ case 'inspection':inspection=b.dataset.id;open=false;stage.previewSteel=false;break;
+ case 'grade':grade=Number(b.dataset.id);break;
+ case 'steel':open=true;select();if(!stage.previewSteel)stage.toggleMineralPreview();return;
+ case 'toggle':open=!open;stage.previewSteel=false;break;
+}
+select();
+});
+globalThis.oreReview={stage,run};
+select();
+stage.prepare().catch(error=>console.error('Catalog GLB',error));
+</script>
+</body></html>

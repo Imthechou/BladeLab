@@ -118,4 +118,17 @@ export class ForgeSound {
       navigator.vibrate(event.type === 'break' ? [26, 24, 21] : event.type === 'surge' ? [11, 14, 10] : 10);
     }
   }
+
+  inspect(ore) {
+    this.play('ore',.66+(ore.density ?? 55)*.006);
+    if(this.muted || !this.context || this.context.state!=='running')return;
+    const oscillator=this.context.createOscillator(),gain=this.context.createGain();
+    const now=this.context.currentTime,density=(ore.density ?? 55)/100;
+    oscillator.frequency.value=310+density*610;
+    gain.gain.setValueAtTime(.065,now);
+    gain.gain.exponentialRampToValueAtTime(.0001,now+.10+density*.48);
+    oscillator.connect(gain);gain.connect(this.master);
+    oscillator.start(now);oscillator.stop(now+.65);
+    oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();};
+  }
 }

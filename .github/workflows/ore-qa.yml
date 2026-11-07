@@ -1,0 +1,212 @@
+name: BladeLab mineral selection QA
+on:
+  push:
+    branches: [feat/ore-gambling-v3]
+  pull_request:
+    paths:
+      - "forge.js"
+      - "materials.js"
+      - "blade-looks.js"
+      - "knife-details.js"
+      - "ore-section.js"
+      - "sound.js"
+      - "index.html"
+      - "stage.js"
+      - "render-budget.js"
+      - "app.js"
+      - "styles.css"
+      - "test/**"
+      - "scripts/qa-ore.mjs"
+      - "scripts/qa-ore-inspection.mjs"
+      - "scripts/qa-ore-catalog.mjs"
+      - "scripts/qa-ore-preview.mjs"
+      - "scripts/qa-refining.mjs"
+      - "scripts/qa-performance.mjs"
+      - "scripts/qa-blade-looks.mjs"
+      - "scripts/qa-blade-loading.mjs"
+      - "scripts/pack-forge-models.mjs"
+      - "assets/forge-models/**"
+      - "qa.js"
+      - "ore-catalog.html"
+      - "scripts/ore-geometry.mjs"
+      - "assets/models/ore_*.glb"
+      - ".github/workflows/ore-qa.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bladelab-qa-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  performance:
+    name: V11 performance comparison
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests
+        run: npm test
+      - name: Install Chromium
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Serve the V11 baseline and current game
+        run: |
+          git fetch --depth=1 origin 7a2c3427fd05174ce820f2751315f3103f22845b
+          mkdir -p /tmp/bladelab-v11
+          git archive 7a2c3427fd05174ce820f2751315f3103f22845b | tar -x -C /tmp/bladelab-v11
+          PORT=8218 node /tmp/bladelab-v11/serve.mjs > /tmp/bladelab-baseline.log 2>&1 &
+          npm start > /tmp/bladelab-performance.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl --silent --fail http://127.0.0.1:8217/ > /dev/null && curl --silent --fail http://127.0.0.1:8218/ > /dev/null; then exit 0; fi
+            sleep 0.25
+          done
+          cat /tmp/bladelab-performance.log /tmp/bladelab-baseline.log
+          exit 1
+      - name: Same-scene frame, input, layout, drawing and autosave comparison
+        run: node scripts/qa-performance.mjs
+      - name: Render 123 looks and verify refinement, fittings and archive parity
+        run: node scripts/qa-blade-looks.mjs
+      - name: Cold-load workshop and archive models at 1.6 Mbps
+        run: node scripts/qa-blade-loading.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bladelab-blade-looks
+          path: artifacts/blade-looks
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bladelab-performance-comparison
+          path: |
+            artifacts/performance
+            artifacts/blade-loading
+          retention-days: 7
+
+  refining:
+    name: Refining quality and furnace failure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests
+        run: npm test
+      - name: Install Chromium
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Start game
+        run: |
+          npm start > /tmp/bladelab-refining.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl --silent --fail http://127.0.0.1:8217/ > /dev/null; then exit 0; fi
+            sleep 0.25
+          done
+          cat /tmp/bladelab-refining.log
+          exit 1
+      - name: Real controls, four result tiers, four failure reasons and inherited steel
+        run: node scripts/qa-refining.mjs
+      - name: Published refining success and failure
+        env:
+          QA_ORIGIN: https://imthechou.github.io/BladeLab/preview/ore-v5/
+          QA_STORAGE_KEY: bladelab.ore-v5.preview.1
+          QA_OUTPUT: artifacts/refining/live
+          QA_QUICK: '1'
+        run: node scripts/qa-refining.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bladelab-refining-screens
+          path: artifacts/refining
+          retention-days: 7
+
+  mobile-ore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests
+        run: npm test
+      - name: Install headless Chromium
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Start game
+        run: |
+          npm start > /tmp/bladelab-server.log 2>&1 &
+          echo $! > /tmp/bladelab-server.pid
+          for i in $(seq 1 40); do
+            if curl --silent --fail http://127.0.0.1:8217/ > /dev/null; then exit 0; fi
+            sleep 0.25
+          done
+          cat /tmp/bladelab-server.log
+          exit 1
+      - name: Mobile journey and WebGL smoke
+        run: node scripts/qa-ore.mjs
+      - name: Twenty mineral models, twelve cuts and inherited blade surfaces
+        run: node scripts/qa-ore-catalog.mjs
+      - name: Published V5 full mobile journey
+        env:
+          QA_ORIGIN: https://imthechou.github.io/BladeLab/preview/ore-v5/
+          QA_STORAGE_KEY: bladelab.ore-v5.preview.1
+          QA_OUTPUT: artifacts/ore-mobile/live
+        run: node scripts/qa-ore.mjs
+      - name: Published V5 catalog assets
+        run: node scripts/qa-ore-preview.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bladelab-ore-mobile-screens
+          path: artifacts/ore-mobile
+          if-no-files-found: ignore
+          retention-days: 7
+
+  inspection-visual:
+    name: Flashlight inspection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests
+        run: npm test
+      - name: Install Chromium
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Start game
+        run: |
+          npm start > /tmp/bladelab-inspection.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl --silent --fail http://127.0.0.1:8217/ > /dev/null; then exit 0; fi
+            sleep 0.25
+          done
+          cat /tmp/bladelab-inspection.log
+          exit 1
+      - name: Five-family rendered-pixel inspection checks
+        run: node scripts/qa-ore-inspection.mjs
+      - name: Published inspection buttons and optical response
+        env:
+          QA_ORIGIN: https://imthechou.github.io/BladeLab/preview/ore-v5/
+          QA_QUICK: '1'
+          QA_OUTPUT: artifacts/ore-inspection/live
+        run: node scripts/qa-ore-inspection.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bladelab-inspection-visual
+          path: artifacts/ore-inspection
+          retention-days: 7

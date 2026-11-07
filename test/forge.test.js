@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   advanceHeat, appraise, beginRefining, buyOre, fitOptions, finishForge, fractureRisk, freshSave,
-  HEAT, LOT_SIZE, migrateSave, MIN_PRICE, MODELS, offers, REFRESH_PRICE, refreshFittings, restart, strike,
+  HEAT, heatBand, pourRefining, REFINEMENT_RESULTS, LOT_SIZE, LOOKS, lookVariant, migrateSave, MIN_PRICE, MODELS, offers, REFRESH_PRICE, refreshFittings, restart, strike,
 } from '../forge.js';
 import { KNIFE_IDS, regionAt } from '../regions.js';
 
@@ -12,12 +12,13 @@ function onAnvil(seed, method = 'good') {
   buyOre(save);
   beginRefining(save.run);
   let blowing = true;
-  for (let i = 0; i < 900 && save.run.phase === 'refine'; i++) {
+  for (let i = 0; i < 1500 && save.run.phase === 'refine'; i++) {
     const heat = save.run.refining;
-    if (method !== 'failed' && heat.step === 'molten') {
-      if (heat.temperature >= 76 || (method === 'fair' && heat.stable > 1.2)) blowing = false;
-      else if (heat.temperature <= 67) blowing = true;
-      if (method === 'fair' && heat.stable > 1.2) blowing = false;
+    if (heat.step === 'molten') {
+      const aim = heatBand(heat).center, predicted = heat.temperature + heat.draft * 3;
+      if (predicted >= aim + 1) blowing = false;
+      else if (predicted <= aim - 1) blowing = true;
+      if (heat.quality >= ({ poor: 29, fair: 50, good: 72, excellent: 94 })[method]) pourRefining(save.run);
     }
     advanceHeat(save.run, 1 / 60, blowing);
   }
@@ -41,23 +42,111 @@ test('browsing batches and opening ore preserve stable offers and charge once', 
   assert.equal(buyOre(save), false);
 });
 
-test('continuous thermal input reaches molten and cast, with three distinct outcomes', () => {
-  for (const [result, purity, stability] of [['good', 12, 12], ['fair', 4, 0], ['failed', -12, -18]]) {
+test('player-controlled casting gives four meaningfully different usable billets', () => {
+  for (const result of ['poor', 'fair', 'good', 'excellent']) {
     const { run } = onAnvil(51, result);
+    const { purity, stability } = REFINEMENT_RESULTS[result];
     assert.equal(run.phase, 'forge');
     assert.equal(run.refinement.result, result);
     assert.equal(run.purity, Math.min(100, run.ore.purity + purity));
     assert.equal(run.stability, Math.max(0, run.ore.stability + stability));
   }
-  const save = freshSave(21);
-  buyOre(save);
-  beginRefining(save.run);
-  advanceHeat(save.run, HEAT.preheat, false);
-  assert.equal(save.run.refining.step, 'molten');
-  advanceHeat(save.run, .61, false);
-  assert.equal(save.run.refining.step, 'cast');
-  advanceHeat(save.run, HEAT.cast, false);
-  assert.equal(save.run.refinement.result, 'failed');
+});
+
+test('unmelted, burnt, frozen and unrefined material really end the paid run', () => {
+  for (const reason of ['unmelted', 'burnt', 'frozen', 'slag']) {
+    const save = freshSave(51); buyOre(save); beginRefining(save.run);
+    const balance = save.credits;
+    let blowing = reason !== 'unmelted';
+    for (let i = 0; i < 1600 && save.run.phase === 'refine'; i++) {
+      const heat = save.run.refining;
+      if (heat.step === 'molten' && reason === 'frozen') blowing = false;
+      if (heat.step === 'molten' && reason === 'slag') {
+        if (heat.temperature >= 61) blowing = false;
+        else if (heat.temperature <= 59) blowing = true;
+      }
+      advanceHeat(save.run, 1 / 60, blowing);
+    }
+    assert.equal(save.run.phase, 'broken', reason);
+    assert.equal(save.run.refinement.result, 'failed');
+    assert.equal(save.run.refinement.reason, reason);
+    assert.equal(save.run.last.type, 'refine-fail');
+    assert.equal(save.credits, balance);
+    assert.equal(save.collection.length, 0);
+    assert.equal(strike(save.run, 'belly'), null);
+    assert.equal(finishForge(save.run), false);
+    assert.equal(appraise(save), null);
+    const restored = migrateSave(JSON.parse(JSON.stringify(save)));
+    assert.equal(restored.run.refinement.reason, reason);
+    assert.ok(restart(restored, 52));
+    assert.equal(restored.run.phase, 'ore');
+    assert.equal(restored.credits, balance);
+  }
+});
+
+test('short overshoots can be rescued, release retains heat, and casting cannot skip refining', () => {
+  const save = freshSave(21); buyOre(save); beginRefining(save.run);
+  assert.equal(pourRefining(save.run), false);
+  while (save.run.refining.step === 'ore') advanceHeat(save.run, 1 / 60, true);
+  const temperature = save.run.refining.temperature;
+  advanceHeat(save.run, .12, false);
+  assert.ok(save.run.refining.temperature > temperature, 'blower retains momentum after release');
+  assert.equal(pourRefining(save.run), false);
+  while (save.run.refining.temperature < 87) advanceHeat(save.run, 1 / 120, true);
+  advanceHeat(save.run, .15, false);
+  assert.equal(save.run.phase, 'refine', 'brief overheat gives recovery time');
+  assert.ok(save.run.refining.damage > 0 && save.run.refining.damage < 100);
+  let blowing = false;
+  while (save.run.phase === 'refine') {
+    const h = save.run.refining, target = heatBand(h).center;
+    if (h.temperature + h.draft * 3 >= target + 1) blowing = false;
+    else if (h.temperature + h.draft * 3 <= target - 1) blowing = true;
+    if (h.quality >= 45) pourRefining(save.run);
+    advanceHeat(save.run, 1 / 60, blowing);
+  }
+  assert.equal(save.run.phase, 'forge');
+  assert.ok(save.run.refinement.quality >= HEAT.minQuality);
+  const completed = JSON.stringify(save);
+  assert.equal(pourRefining(save.run), false);
+  advanceHeat(save.run, 30, true);
+  assert.equal(JSON.stringify(save), completed);
+});
+
+test('frame chunking and refresh do not bypass furnace failure or erase a paid billet', () => {
+  const a = freshSave(51); buyOre(a); beginRefining(a.run);
+  const b = JSON.parse(JSON.stringify(a));
+  advanceHeat(a.run, 6, true);
+  for (let i = 0; i < 360; i++) advanceHeat(b.run, 1 / 60, true);
+  assert.equal(a.run.refinement.reason, 'burnt');
+  assert.deepEqual(a.run.refinement, b.run.refinement);
+  const original = freshSave(51); buyOre(original); beginRefining(original.run);
+  advanceHeat(original.run, 1.7, true);
+  const restored = migrateSave(JSON.parse(JSON.stringify(original)));
+  assert.deepEqual(restored, original);
+  advanceHeat(original.run, 6, false); advanceHeat(restored.run, 6, false);
+  assert.deepEqual(restored, original);
+  const legacy = freshSave(52); buyOre(legacy); beginRefining(legacy.run);
+  legacy.run.refining = { step: 'molten', temperature: 73, elapsed: 6, stable: 3, hot: 0 };
+  const paid = legacy.credits, stone = legacy.run.ore;
+  migrateSave(legacy);
+  assert.equal(legacy.run.refining.step, 'ore');
+  assert.equal(legacy.run.refining.damage, 0);
+  assert.equal(legacy.credits, paid);
+  assert.equal(legacy.run.ore, stone);
+});
+
+test('refining quality affects final attributes and early hammer risk on the same ore', () => {
+  const best = onAnvil(59, 'excellent'), worst = onAnvil(59, 'poor');
+  for (const save of [best, worst]) {
+    for (let i = 0; i < 6; i++) strike(save.run, 'belly');
+    finishForge(save.run); save.run.fit = fitOptions(save.run)[0].id;
+    appraise(save);
+  }
+  assert.deepEqual(best.run.ore, worst.run.ore);
+  assert.ok(best.run.record.score >= worst.run.record.score + 15);
+  assert.ok(fractureRisk(best.run) < fractureRisk(worst.run));
+  assert.equal(best.run.record.refinement.result, 'excellent');
+  assert.equal(worst.run.record.refinement.result, 'poor');
 });
 
 test('first six strikes are safe and give a real silhouette and finish', () => {
@@ -79,7 +168,7 @@ test('first six strikes are safe and give a real silhouette and finish', () => {
 test('same ore and input history reproduce the knife, with higher risk for poorer refining', () => {
   const a = onAnvil(59);
   const b = onAnvil(59);
-  const c = onAnvil(59, 'failed');
+  const c = onAnvil(59, 'poor');
   for (const zone of ['belly', 'edge', 'tip', 'edge', 'belly', 'edge']) {
     assert.deepEqual(strike(a.run, zone), strike(b.run, zone));
     strike(c.run, zone);
@@ -147,6 +236,65 @@ test('all twelve model IDs have conserved region weights and can cover a grip', 
       assert.ok(Math.abs(blade + guard + grip - 1) < .00001);
     }
   }
+});
+
+test('all 41 finishes can be forged at each tier and a strike edits at most one slot', () => {
+  const slots = Object.keys(LOOKS);
+  const catalogue = slots.map(slot => Object.keys(LOOKS[slot]).filter(id => id !== 'raw' && id !== 'none'));
+  assert.deepEqual(catalogue.map(ids => ids.length), [5, 12, 12, 12]);
+  const expected = catalogue.flatMap((ids, index) => ids.flatMap(id => [1, 2, 3].map(tier => [slots[index], id, tier].join('/'))));
+  const seen = new Set();
+  let upgrades = 0, replacements = 0, fades = 0;
+  for (let seed = 0; seed < 2200 && seen.size < expected.length; seed++) {
+    const save = freshSave(seed);
+    buyOre(save);
+    const { run } = save;
+    run.phase = 'forge';
+    run.stability = 76;
+    while (run.phase === 'forge' && run.hits < 30) {
+      const before = { ...run.skin, levels: { ...run.skin.levels }, variants: { ...run.skin.variants } };
+      const event = strike(run, ['belly', 'edge', 'tip'][(seed + run.hits) % 3]);
+      const changed = slots.filter(slot => before[slot] !== run.skin[slot] || before.levels[slot] !== run.skin.levels[slot]);
+      const slot = event.change?.slot;
+      assert.deepEqual(changed, slots.includes(slot) ? [slot] : []);
+      if (!slots.includes(slot)) continue;
+      const { action, tier } = event.change;
+      if (action === 'upgrade') {
+        upgrades++;
+        assert.deepEqual(run.skin.variants[slot], before.variants[slot]);
+      } else if (action === 'replace') replacements++;
+      if (action === 'fade') {
+        fades++;
+        assert.equal(tier, before.levels[slot] - 1);
+      }
+      if (tier > 0) {
+        assert.equal(lookVariant(run.skin, slot).id, run.skin[slot]);
+        seen.add([slot, run.skin[slot], tier].join('/'));
+      } else assert.equal(run.skin.variants?.[slot], undefined);
+    }
+  }
+  assert.deepEqual(expected.filter(key => !seen.has(key)), []);
+  assert.ok(upgrades && replacements && fades);
+  assert.equal(LOOKS.film.peacock, '青金光');
+  assert.equal(LOOKS.film.doppler, '夜潮');
+});
+
+test('archived finishes retain their templates, refinement and purity, with a deterministic legacy fallback', () => {
+  const save = onAnvil(28);
+  while (save.run.hits < 6) strike(save.run, 'belly');
+  assert.equal(finishForge(save.run), true);
+  save.run.fit = fitOptions(save.run)[0].id;
+  const archived = appraise(save);
+  const reloaded = migrateSave(JSON.parse(JSON.stringify(save))).collection[0];
+  assert.deepEqual(reloaded.skin, archived.skin);
+  assert.deepEqual(reloaded.refinement, save.run.refinement);
+  assert.equal(reloaded.purity, save.run.purity);
+  assert.deepEqual(reloaded.ore, save.run.ore);
+
+  const legacy = { ...reloaded.skin, film: 'doppler' };
+  delete legacy.variants;
+  assert.deepEqual(lookVariant(legacy, 'film'), lookVariant({ ...legacy }, 'film'));
+  assert.notDeepEqual(lookVariant(legacy, 'film'), lookVariant({ ...legacy, seed: .314 }, 'film'));
 });
 
 test('saved v1 credit, paid ore and archived knives survive migration', () => {

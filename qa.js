@@ -1,4 +1,4 @@
-import { advanceHeat, beginRefining, buyOre, freshSave, strike } from './forge.js?v=2';
+import { advanceHeat, beginRefining, buyOre, freshSave, heatBand, strike } from './forge.js?v=16';
 
 const scenarios = { full: '完整一炉', rare: '下一锤异形', break: '下一锤断裂' };
 
@@ -8,8 +8,15 @@ function preparedSave(mode) {
     const save = freshSave(seed);
     buyOre(save);
     beginRefining(save.run);
-    for (let tick = 0; tick < 500 && save.run.phase === 'refine'; tick++) {
-      advanceHeat(save.run, .03, tick < 50);
+    let blowing = true;
+    for (let tick = 0; tick < 1000 && save.run.phase === 'refine'; tick++) {
+      const heat = save.run.refining;
+      if (heat.step === 'molten') {
+        const aim = heatBand(heat).center, predicted = heat.temperature + heat.draft * 3;
+        if (predicted >= aim + 1) blowing = false;
+        else if (predicted <= aim - 1) blowing = true;
+      }
+      advanceHeat(save.run, .02, blowing);
     }
     while (save.run.phase === 'forge' && save.run.hits < 30) {
       const snapshot = JSON.stringify(save);
@@ -70,7 +77,7 @@ export function createQaSession(mode) {
       panel.open = true;
       panel.innerHTML = `<summary>真机验收 · ${scenarios[mode]}</summary>
         <p>这里是独立试玩，信用点和藏刀与正常游戏分开。</p>
-        <nav aria-label="验收场景">${Object.entries(scenarios).map(([key, label]) => `<a href="?qa=${key}">${label}</a>`).join('')}<a href="?v=2.1">返回正常游戏</a></nav>
+        <nav aria-label="验收场景">${Object.entries(scenarios).map(([key, label]) => `<a href="?qa=${key}">${label}</a>`).join('')}<a href="?v=16">返回正常游戏</a></nav>
         <p>${mode === 'full' ? '从选料玩到收锤、装配和入藏。可以连续玩三炉。' : '在当前刀身点一锤，观察起手、撞击声和结果演出。'}</p>
         <button type="button" class="secondary">生成并复制验收记录</button>
         <textarea hidden readonly aria-label="真机验收记录" spellcheck="false"></textarea>
