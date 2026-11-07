@@ -6,6 +6,7 @@ on:
     paths:
       - "forge.js"
       - "materials.js"
+      - "blade-looks.js"
       - "ore-section.js"
       - "sound.js"
       - "index.html"
@@ -20,6 +21,7 @@ on:
       - "scripts/qa-ore-preview.mjs"
       - "scripts/qa-refining.mjs"
       - "scripts/qa-performance.mjs"
+      - "scripts/qa-blade-looks.mjs"
       - "qa.js"
       - "ore-catalog.html"
       - "scripts/ore-geometry.mjs"
@@ -62,6 +64,15 @@ jobs:
           exit 1
       - name: Same-scene frame, input, layout, drawing and autosave comparison
         run: node scripts/qa-performance.mjs
+      - name: Render all 123 blade looks and verify ore, quality and layout inheritance
+        run: node scripts/qa-blade-looks.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bladelab-blade-looks
+          path: artifacts/blade-looks
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -13,14 +13,25 @@ export const FAMILIES = [
   { id: 'frost', name: '霜晶矿', short: '晶矿', color: '#89cbc7', dark: '#345d5d', metal: 'pearl', pattern: 'crystal', film: 'rainbow', hint: '斜光下有细碎反光，内里可能有清晰的晶区。' },
   { id: 'coal', name: '熔渣铁', short: '暗钢', color: '#e0956a', dark: '#69433a', metal: 'obsidian', pattern: 'ember', film: 'oxide', hint: '断口露出暖色矿脉，可能保留少量熔纹。' },
   { id: 'meteor', name: '陨星黑矿', short: '陨铁', color: '#aaa1e6', dark: '#413862', metal: 'gunmetal', pattern: 'nebula', film: 'doppler', hint: '带浅熔蚀坑的深色熔壳，细看可能见到金属碎屑。' },
-  { id: 'ochre', name: '赭铁层矿', short: '赭铁', color: '#b58a69', dark: '#684735', metal: 'silver', pattern: 'damascus', film: 'gold', hint: '黄褐石皮呈层状剥落，铁质结核常藏在厚皮之内。' },
+  { id: 'ochre', name: '赭铁层矿', short: '赭铁', color: '#b58a69', dark: '#684735', metal: 'copper', pattern: 'damascus', film: 'gold', hint: '黄褐石皮呈层状剥落，铁质结核常藏在厚皮之内。' },
 ];
 
 export const LOOKS = {
-  metal: { raw: '粗钢', silver: '银钢', pearl: '霜银', gunmetal: '枪灰', obsidian: '黑曜钢' },
-  pattern: { none: '', damascus: '大马士革', crystal: '冰晶纹', ember: '熔脉', nebula: '星砂' },
-  film: { none: '', oxide: '淬蓝', doppler: '深海 Doppler', rainbow: '极光虹膜', gold: '赤金热带' },
-  fx: { none: '', edge: '刃光', ember: '余烬', aurora: '流光' },
+  metal: { raw: '粗钢', silver: '银钢', pearl: '霜银', gunmetal: '枪灰', obsidian: '黑曜钢', copper: '铜辉钢' },
+  pattern: {
+    none: '', damascus: '大马士革', crystal: '冰棱', ember: '熔脉', nebula: '陨砂',
+    feather: '叠羽', scales: '银鳞', fan: '扇骨', web: '蛛网', rings: '木目',
+    braid: '绞丝', strata: '岩阶', honeycomb: '蜂巢',
+  },
+  film: {
+    none: '', oxide: '淬蓝', doppler: '夜潮', rainbow: '极光', gold: '落日金',
+    silverline: '一线银', nacre: '珠母', peacock: '青金光', smoke: '烟镜', verdigris: '铜青',
+    ceramic: '霜瓷', satin: '镜缎', halo: '虹环',
+  },
+  fx: {
+    none: '', edge: '刃光', ember: '余烬', aurora: '流光', tip: '尖芒', flame: '冷焰',
+    vein: '晶脉', arc: '电弧', wave: '回波', vortex: '涡光', stardust: '星尘', frost: '凝霜', shards: '碎镜',
+  },
 };
 export const MODELS = {
   blank: '刀胚', straight: '直刀', tangdao: '唐刀', karambit: '爪子刀',
@@ -181,6 +192,17 @@ export function rngFor(...parts) {
     t ^= t + Math.imul(t ^ t >>> 7, t | 61);
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
+}
+
+export function lookVariant(skin, slot) {
+  const saved = skin.variants?.[slot];
+  const id = skin[slot];
+  if (saved && saved.id === id && Number.isInteger(saved.layout) && saved.layout >= 0 && saved.layout < 3 &&
+      Number.isFinite(saved.seed) && saved.seed >= 0 && saved.seed < 1) return saved;
+  // Older blades already have a surface seed. The style and slot give them
+  // repeatable layouts without consuming any of the strike outcome rolls.
+  const roll = rngFor(skin.seed ?? .5, 'blade-layout-v1', slot, id);
+  return { id, layout: Math.floor(roll() * 3), seed: roll() };
 }
 
 const pick = (array, roll) => array[Math.floor(roll() * array.length)];
@@ -441,6 +463,7 @@ function mutate(run, slot, type, roll, guaranteed = false) {
     options.find(key => (point -= key === familyChoice ? affinity + premium : 1) < 0);
   if (!next) return null;
   run.skin[slot] = next;
+  (run.skin.variants ??= {})[slot] = lookVariant(run.skin, slot);
   run.skin.levels[slot] = type === 'surge' && run.hits >= 13 ? (roll() < .34 ? 3 : 2) : 1;
   return { slot, label: LOOKS[slot][next], action: original === 'none' || original === 'raw' ? 'add' : 'replace', tier: run.skin.levels[slot] };
 }
@@ -494,7 +517,10 @@ export function strike(run, zone, position = { u: .67, v: zone === 'edge' ? .12 
     run.cracks = Math.min(4, run.cracks + 1);
     if (run.skin.fx !== 'none' && hit >= 15 && roll() < .44) {
       run.skin.levels.fx--;
-      if (!run.skin.levels.fx) run.skin.fx = 'none';
+      if (!run.skin.levels.fx) {
+        run.skin.fx = 'none';
+        if (run.skin.variants) delete run.skin.variants.fx;
+      }
       change = { slot: 'fx', label: '特效退档', action: 'fade', tier: run.skin.levels.fx };
     }
   } else if (!change && type === 'surge' && hit >= 12 && !run.changedShape && rngFor(run.seed, 'shape-trigger', hit)() < .14) {
@@ -555,7 +581,7 @@ export function appraise(save) {
   const credit = [0, 16, 23, 32, 48][grade];
   run.record = {
     id: ++save.count, name: trait + ' · ' + MODELS[run.model], grade: grades[grade], stats, score, credit,
-    hits: run.hits, model: run.model, fit: run.fit, skin: run.skin, marks: run.marks,
+    hits: run.hits, model: run.model, fit: run.fit, skin: run.skin, marks: run.marks, purity: run.purity,
     ore: run.ore, refinement: run.refinement, highlights: run.highlights,
   };
   save.credits += credit;

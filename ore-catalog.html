@@ -35,8 +35,8 @@ aside{font-size:11px;color:#918f87;margin:16px 0 2px}
 <section><h2>开料 / 观察</h2><div class="controls" id="grading"></div><div id="info"></div></section>
 <aside>本页为美术验收工具，素材与实际锻造使用相同的 GLB、Shader 和切面代码。保存的成刀不受此页面影响。</aside>
 <script type="module">
-import { FAMILIES, ORE_VARIANTS, ORE_MATERIALS, ORE_TINTS, ORE_EXPOSURES, oreOptics, oreMaterialOf, oreSignals, freshRun } from './forge.js?v=13';
-import { ForgeStage } from './stage.js?v=13';
+import { FAMILIES, ORE_VARIANTS, ORE_MATERIALS, ORE_TINTS, ORE_EXPOSURES, oreOptics, oreMaterialOf, oreSignals, freshRun } from './forge.js?v=14';
+import { ForgeStage } from './stage.js?v=14';
 const stage = new ForgeStage(document.getElementById('ore-canvas'));
 const run = freshRun(99);
 let family='river',variant=0,material='river_gray',grade=2,open=false;

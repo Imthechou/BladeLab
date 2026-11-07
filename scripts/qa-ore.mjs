@@ -23,7 +23,7 @@ const image = name => page.screenshot({ path: `${output}/${name}.png`, animation
 const step = () => page.locator('#stage').getAttribute('data-mode');
 const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
 try {
-  await page.goto(origin+'?v=13', { waitUntil: 'load' });
+  await page.goto(origin+'?v=14', { waitUntil: 'load' });
   await page.waitForSelector('.ore-grid .ore-card');
   await page.waitForFunction(()=>[...document.querySelectorAll('.ore-thumbnail img')].every(img=>img.naturalWidth>0));
   await page.waitForTimeout(600);
@@ -144,7 +144,16 @@ try {
   assert.equal(await step(),'appraise');
   await page.locator('#collection').click();
   assert.ok((await page.locator('#vault-list .brief').count()) >= 1);
+  if (await page.locator('#vault-stage').count()) {
+    await page.locator('#vault-list [data-blade]').first().click();
+    await page.locator('#vault-stage #scene').waitFor();
+    assert.match(await page.locator('#vault-looks').innerText(), / I/);
+    await page.waitForTimeout(400);
+    await image('07-vault-375');
+    assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).collection[0].skin, storageKey), archived.skin);
+  }
   await page.locator('#close-vault').click();
+  await page.locator('#stage #scene').waitFor();
   const glStatus = await page.locator('#stage-state').innerText();
   assert.ok(!glStatus.includes('3D 暂不可用'), '3D did not initialize');
   assert.deepEqual(errors, [], 'browser/GLSL console errors');

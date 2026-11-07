@@ -169,6 +169,11 @@ dialog::backdrop { background: #090807be; }
 .vault-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .vault-head h2 { margin: 4px 0; }
 #vault-list { display: grid; gap: 6px; }
+#vault-preview { margin-bottom: 12px; }
+#vault-stage { position: relative; height: clamp(172px, 29dvh, 240px); overflow: hidden; border-radius: 10px; background: radial-gradient(ellipse at center,#343d44,#181b20 82%); }
+#vault-stage #scene { cursor: grab; touch-action: none; }
+.vault-item { color: var(--ink); text-align: left; width: 100%; }
+.vault-item[aria-pressed="true"] { border-color: #a3815e; }
 
 @media (max-width: 820px) {
   .frame { width: min(100% - 34px, 710px); }

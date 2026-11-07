@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   advanceHeat, appraise, beginRefining, buyOre, fitOptions, finishForge, fractureRisk, freshSave,
-  HEAT, heatBand, pourRefining, REFINEMENT_RESULTS, LOT_SIZE, migrateSave, MIN_PRICE, MODELS, offers, REFRESH_PRICE, refreshFittings, restart, strike,
+  HEAT, heatBand, pourRefining, REFINEMENT_RESULTS, LOT_SIZE, LOOKS, lookVariant, migrateSave, MIN_PRICE, MODELS, offers, REFRESH_PRICE, refreshFittings, restart, strike,
 } from '../forge.js';
 import { KNIFE_IDS, regionAt } from '../regions.js';
 
@@ -236,6 +236,65 @@ test('all twelve model IDs have conserved region weights and can cover a grip', 
       assert.ok(Math.abs(blade + guard + grip - 1) < .00001);
     }
   }
+});
+
+test('all 41 finishes can be forged at each tier and a strike edits at most one slot', () => {
+  const slots = Object.keys(LOOKS);
+  const catalogue = slots.map(slot => Object.keys(LOOKS[slot]).filter(id => id !== 'raw' && id !== 'none'));
+  assert.deepEqual(catalogue.map(ids => ids.length), [5, 12, 12, 12]);
+  const expected = catalogue.flatMap((ids, index) => ids.flatMap(id => [1, 2, 3].map(tier => [slots[index], id, tier].join('/'))));
+  const seen = new Set();
+  let upgrades = 0, replacements = 0, fades = 0;
+  for (let seed = 0; seed < 2200 && seen.size < expected.length; seed++) {
+    const save = freshSave(seed);
+    buyOre(save);
+    const { run } = save;
+    run.phase = 'forge';
+    run.stability = 76;
+    while (run.phase === 'forge' && run.hits < 30) {
+      const before = { ...run.skin, levels: { ...run.skin.levels }, variants: { ...run.skin.variants } };
+      const event = strike(run, ['belly', 'edge', 'tip'][(seed + run.hits) % 3]);
+      const changed = slots.filter(slot => before[slot] !== run.skin[slot] || before.levels[slot] !== run.skin.levels[slot]);
+      const slot = event.change?.slot;
+      assert.deepEqual(changed, slots.includes(slot) ? [slot] : []);
+      if (!slots.includes(slot)) continue;
+      const { action, tier } = event.change;
+      if (action === 'upgrade') {
+        upgrades++;
+        assert.deepEqual(run.skin.variants[slot], before.variants[slot]);
+      } else if (action === 'replace') replacements++;
+      if (action === 'fade') {
+        fades++;
+        assert.equal(tier, before.levels[slot] - 1);
+      }
+      if (tier > 0) {
+        assert.equal(lookVariant(run.skin, slot).id, run.skin[slot]);
+        seen.add([slot, run.skin[slot], tier].join('/'));
+      } else assert.equal(run.skin.variants?.[slot], undefined);
+    }
+  }
+  assert.deepEqual(expected.filter(key => !seen.has(key)), []);
+  assert.ok(upgrades && replacements && fades);
+  assert.equal(LOOKS.film.peacock, '青金光');
+  assert.equal(LOOKS.film.doppler, '夜潮');
+});
+
+test('archived finishes retain their templates, refinement and purity, with a deterministic legacy fallback', () => {
+  const save = onAnvil(28);
+  while (save.run.hits < 6) strike(save.run, 'belly');
+  assert.equal(finishForge(save.run), true);
+  save.run.fit = fitOptions(save.run)[0].id;
+  const archived = appraise(save);
+  const reloaded = migrateSave(JSON.parse(JSON.stringify(save))).collection[0];
+  assert.deepEqual(reloaded.skin, archived.skin);
+  assert.deepEqual(reloaded.refinement, save.run.refinement);
+  assert.equal(reloaded.purity, save.run.purity);
+  assert.deepEqual(reloaded.ore, save.run.ore);
+
+  const legacy = { ...reloaded.skin, film: 'doppler' };
+  delete legacy.variants;
+  assert.deepEqual(lookVariant(legacy, 'film'), lookVariant({ ...legacy }, 'film'));
+  assert.notDeepEqual(lookVariant(legacy, 'film'), lookVariant({ ...legacy, seed: .314 }, 'film'));
 });
 
 test('saved v1 credit, paid ore and archived knives survive migration', () => {

@@ -3,10 +3,10 @@ import {
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
-} from './forge.js?v=13';
-import { ForgeStage } from './stage.js?v=13';
-import { ForgeSound } from './sound.js?v=13';
-import { createQaSession } from './qa.js?v=13';
+} from './forge.js?v=14';
+import { ForgeStage } from './stage.js?v=14';
+import { ForgeSound } from './sound.js?v=14';
+import { createQaSession } from './qa.js?v=14';
 
 const get = id => document.getElementById(id);
 const canvas = get('scene');
@@ -40,6 +40,7 @@ let storageFailed = false;
 let inspectionMode = 'natural';
 let toolStone = '';
 let echoTimer;
+let vaultView;
 
 function restore() {
   if (qa) return qa.save;
@@ -87,7 +88,8 @@ function info(label, text, copy = '', side = '') {
 
 function lookChips(run) {
   const fields = Object.entries(LOOKS).filter(([slot]) => LOOKS[slot][run.skin[slot]]);
-  return `<div class="look-list">${fields.map(([slot, names]) => `<span class="look-chip ${run.skin.levels[slot] >= 3 ? 'rarity' : ''}">${names[run.skin[slot]]}${roman[run.skin.levels[slot]]}</span>`).join('')}${signature(run.skin) ? `<span class="look-chip rarity">${signature(run.skin)}</span>` : ''}</div>`;
+  const combination = signature(run.skin);
+  return `<div class="look-list">${fields.map(([slot, names]) => `<span class="look-chip ${run.skin.levels[slot] >= 3 ? 'rarity' : ''}">${names[run.skin[slot]]}${roman[run.skin.levels[slot]] || ''}</span>`).join('')}${combination ? `<span class="look-chip rarity">${combination}</span>` : ''}</div>`;
 }
 
 function render() {
@@ -182,6 +184,7 @@ function render() {
     const record = run.record;
     title('05 / THE REVEAL', record.name, '第 ' + String(record.id).padStart(2, '0') + ' 号藏刀 · 已收入本地藏刀记录。');
     readout.innerHTML = info('成刀品质', `<span class="result-grade">${esc(record.grade)}</span> · ${esc(record.score)} 分`, record.refinement?.quality != null ? REFINEMENT_RESULTS[record.refinement.result].label + ' · 精炼质量 ' + record.refinement.quality : '', '+' + record.credit + ' CR') +
+      lookChips(record) +
       `<div class="stat-list">${record.stats.map((n, i) => `<div class="stat"><span>${STAT_NAMES[i]}</span><span class="stat-track"><i style="width:${Number(n)}%"></i></span><b>${Number(n)}</b></div>`).join('')}</div>`;
     actions.innerHTML = button('restart', '再开一炉');
   } else {
@@ -214,6 +217,13 @@ function renderTools(run,ore) {
   windowButton.disabled=ore.window || save.credits<ore.price+WINDOW_PRICE;
   windowButton.querySelector('span').innerHTML=ore.window ? '已擦窗' : '擦窗 <small>'+WINDOW_PRICE+' CR</small>';
   windowButton.setAttribute('aria-label',ore.window ? '这块原石已经擦窗' : '擦开一小块石皮，花费'+WINDOW_PRICE+'信用点');
+}
+
+function toggleOreBlade(control) {
+  const preview = stage?.toggleMineralPreview();
+  control.setAttribute('aria-pressed', String(Boolean(preview)));
+  control.querySelector('strong').textContent = preview ? '回看切面 ↩' : '预览刀身 ↗';
+  get('stage-hint').textContent = preview ? '同源钢纹预览 · 后续锤击仍会变化' : '同源矿相 · 拖动检视';
 }
 
 function renderTray(run, fit) {
@@ -455,10 +465,7 @@ document.addEventListener('click', event => {
     inspectionMode='window';stage?.setInspection('window');
     sound.play('polish',.75);
   } else if(action==='preview-mineral' && run.phase==='reveal' && !revealPending){
-    const preview=stage?.toggleMineralPreview();
-    control.setAttribute('aria-pressed',String(Boolean(preview)));
-    control.querySelector('strong').textContent=preview ? '回看切面 ↩' : '预览刀身 ↗';
-    get('stage-hint').textContent=preview ? '同源钢纹预览 · 后续锤击仍会变化' : '同源矿相 · 拖动检视';
+    toggleOreBlade(control);
     return;
   } else if (action === 'select-ore' && run.phase === 'ore' && Number.isInteger(Number(id)) && Number(id) >= 0 && Number(id) < LOT_SIZE) {
     run.selected = Number(id);
@@ -545,16 +552,16 @@ document.addEventListener('keyup', event => {
 
 canvas.addEventListener('pointerdown', event => {
   if (!event.isPrimary || !stage) return;
-  if (save.run.phase === 'forge') {
+  if (vaultView || ['ore', 'reveal', 'fit', 'appraise'].includes(save.run.phase)) {
+    canvas.setPointerCapture(event.pointerId);
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  } else if (save.run.phase === 'forge') {
     const hit = stage.hit(event.clientX, event.clientY);
     if (hit && qa) {
       const now = performance.now();
       hit.pressedAt = event.timeStamp > 0 && event.timeStamp <= now ? event.timeStamp : now;
     }
     hitBlade(hit);
-  } else if (['ore', 'reveal', 'fit', 'appraise'].includes(save.run.phase)) {
-    canvas.setPointerCapture(event.pointerId);
-    drag = { id: event.pointerId, x: event.clientX, y: event.clientY };
   }
 });
 canvas.addEventListener('pointermove', event => {
@@ -571,8 +578,43 @@ get('sound').addEventListener('click', event => {
   event.currentTarget.setAttribute('aria-label', muted ? '开启声音' : '静音');
 });
 get('collection').addEventListener('click', () => {
-  get('vault-list').innerHTML = save.collection.map(item => `<div class="brief"><b>${esc(item.name)}</b><span>${esc(item.grade)} · ${Number(item.score)} 分</span></div>`).join('') || '<div class="brief"><span>完成第一把刀后，成品会出现在这里。</span></div>';
+  const available = stage && !busy && !heatInput && !revealPending;
+  get('vault-list').innerHTML = save.collection.map((item, index) => {
+    const label = `<b>${esc(item.name)}</b><span>${esc(item.grade)} · ${Number(item.score)} 分</span>`;
+    return available && item.skin?.levels && Object.hasOwn(MODELS, item.model) ?
+      `<button type="button" class="brief vault-item" data-blade="${index}" aria-pressed="false">${label}</button>` :
+      `<div class="brief">${label}</div>`;
+  }).join('') || '<div class="brief"><span>完成第一把刀后，成品会出现在这里。</span></div>';
   get('vault').showModal();
+});
+get('vault-list').addEventListener('click', event => {
+  const item = event.target.closest('[data-blade]');
+  if (!item) return;
+  const blade = save.collection[Number(item.dataset.blade)];
+  vaultView ??= { x: stage.turnX, y: stage.turnY, touched: stage.touched, previewSteel: stage.previewSteel };
+  const preview = get('vault-preview');
+  preview.hidden = false;
+  get('vault-stage').append(canvas);
+  get('vault-looks').innerHTML = lookChips(blade);
+  for (const entry of get('vault-list').querySelectorAll('[data-blade]')) entry.setAttribute('aria-pressed', entry === item);
+  stage.turnX = stage.turnY = 0;
+  stage.sync({ ...blade, phase: 'appraise' }, blade.ore, FITS.find(fit => fit.id === blade.fit));
+  stage.resize();
+  preview.scrollIntoView({ block: 'nearest' });
+});
+get('vault').addEventListener('close', () => {
+  if (!vaultView) return;
+  const view = vaultView;
+  vaultView = null;
+  stageBox.prepend(canvas);
+  get('vault-preview').hidden = true;
+  stage.resize();
+  render();
+  if (save.run.phase === 'ore') stage.setInspection(inspectionMode);
+  if (save.run.phase === 'reveal' && view.previewSteel) toggleOreBlade(document.querySelector('[data-action="preview-mineral"]'));
+  stage.turnX = view.x;
+  stage.turnY = view.y;
+  stage.touched = view.touched;
 });
 get('close-vault').addEventListener('click', () => get('vault').close());
 
