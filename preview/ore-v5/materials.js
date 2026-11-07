@@ -1,5 +1,5 @@
-import { MARK_WIDTH, MARK_HEIGHT, mineralHeritage, lookVariant } from './forge.js?v=14';
-import { bladeLooksGLSL, lookCodes } from './blade-looks.js?v=14';
+import { MARK_WIDTH, MARK_HEIGHT, mineralHeritage, lookVariant } from './forge.js?v=15';
+import { bladeLooksGLSL, lookCodes } from './blade-looks.js?v=15';
 
 const T = globalThis.THREE;
 const layoutUniforms = { metal: 'fMetalLayout', pattern: 'fPatternLayout', film: 'fFilmLayout', fx: 'fFxLayout' };
@@ -245,11 +245,12 @@ forgeRough += inheritedGrain*.10 + (sourceField.z-.5)*.025 + (1.-fOreClarity)*.0
 
 vec4 special = vec4(0.);
 #ifdef BLADE_DECORATION
-float ink = 0., seam = 0.;
+vec2 relief = vec2(0.);
+float seam = 0.;
 if (fCodes.y > .5) {
   vec3 base = steel;
   float baseRough = forgeRough;
-  ink = lookPattern(int(fCodes.y),ranks.y,uv,coarse,steel,forgeRough,seam)*visibility.y;
+  relief = lookPattern(int(fCodes.y),ranks.y,uv,coarse,steel,forgeRough,seam)*visibility.y;
   steel = mix(base,steel,visibility.y);
   forgeRough = mix(baseRough,forgeRough,visibility.y);
   seam *= visibility.y;
@@ -258,7 +259,7 @@ if (fxStyle > 0) special = lookEffect(fxStyle,ranks.w,uv,edge,coarse,seam)*visib
 if (fCodes.z > .5) {
   vec3 base = steel;
   float baseRough = forgeRough;
-  lookFilm(int(fCodes.z),ranks.z,uv,view,edge,ink,special.a,steel,forgeRough);
+  lookFilm(int(fCodes.z),ranks.z,uv,view,edge,relief,special.a,steel,forgeRough);
   steel = mix(base,steel,visibility.z);
   forgeRough = mix(baseRough,forgeRough,visibility.z);
 }
@@ -297,14 +298,14 @@ forgeGlow *= 1.-grip;
 export function makeBladeMaterial(original, uniforms, raw) {
   const material = new T.MeshStandardMaterial({
     color: 0xffffff,
-    map: original?.map || null,
+    map: raw ? null : original?.map || null,
     roughness: .32,
     metalness: .9,
     envMapIntensity: 1.22,
   });
   material.userData.forge = uniforms;
   if (!raw) material.defines = { ...material.defines, BLADE_DECORATION: 1 };
-  material.customProgramCacheKey = () => raw ? 'blade-lab-billet-14' : 'blade-lab-looks-14';
+  material.customProgramCacheKey = () => raw ? 'blade-lab-billet-15' : 'blade-lab-looks-15';
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = vertexHead + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + vertexBody);

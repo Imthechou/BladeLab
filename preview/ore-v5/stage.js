@@ -1,10 +1,12 @@
-import { sectionContour } from './ore-section.js?v=14';
-import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=14';
-import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=14';
+import { sectionContour } from './ore-section.js?v=15';
+import { makeBladeMaterial, makeCutMaterial, makeMeltMaterial, makeOreMaterial, setSurface, surfaceUniforms } from './materials.js?v=15';
+import { FAMILIES, ORE_VARIANTS, oreMaterialOf, oreOptics, oreInspection, oreModelId, familyOf, modelCandidates } from './forge.js?v=15';
 import { KNIFE_IDS, regionAt } from './regions.js?v=2';
-import { RenderBudget } from './render-budget.js?v=14';
+import { RenderBudget } from './render-budget.js?v=15';
 
 const T = globalThis.THREE;
+const localAssets = new URL('./assets/', import.meta.url);
+const sharedAssets = new URL(document.documentElement.dataset.sharedAssets || './assets/', import.meta.url);
 const modelFiles = {
   molten: 'molten_sphere_small', blank: 'blank_ingot_small',
   ...Object.fromEntries(FAMILIES.flatMap(family => ORE_VARIANTS.map((_, variant) => {
@@ -310,16 +312,19 @@ export class ForgeStage {
   load(id) {
     if (this.cache.has(id)) return Promise.resolve(this.cache.get(id));
     if (this.pending.has(id)) return this.pending.get(id);
-    const url = new URL(`${isOreModel(id) ? './' : '../../'}assets/models/${modelFiles[id]}.glb`, import.meta.url);
-    const pending = this.loader.loadAsync(url.href).then(({ scene }) => {
+    const name = modelFiles[id] + '.glb';
+    const ore = isOreModel(id);
+    const original = new URL('models/' + name, ore ? localAssets : sharedAssets);
+    const request = ore ? this.loader.loadAsync(original.href) : this.loadWorkshopModel(name, original);
+    const pending = request.then(({ scene }) => {
       let source;
       scene.traverse(obj => { if (obj.isMesh && !source) source = obj; });
       const geometry = source.geometry;
-      const process = isOreModel(id) || id === 'molten';
+      const process = ore || id === 'molten';
       const coords = process ? null : coordinates(geometry, id);
-      const uniforms = isOreModel(id) ? this.oreUniforms : id === 'molten' ? this.meltUniforms : surfaceUniforms();
+      const uniforms = ore ? this.oreUniforms : id === 'molten' ? this.meltUniforms : surfaceUniforms();
       if (coords) uniforms.fBladeRoot.value = coords.bladeRoot;
-      const material = isOreModel(id) ? makeOreMaterial(source.material, uniforms, id.split('_')[1]) :
+      const material = ore ? makeOreMaterial(source.material, uniforms, id.split('_')[1]) :
         id === 'molten' ? makeMeltMaterial(uniforms) : makeBladeMaterial(source.material, uniforms, id === 'blank');
       const mesh = new T.Mesh(geometry, material);
       const asset = { mesh, coords, uniforms };
@@ -330,10 +335,25 @@ export class ForgeStage {
     return pending;
   }
 
+  async loadWorkshopModel(name, original) {
+    if (typeof WebAssembly === 'object') {
+      const packed = new URL('forge-models/' + name, localAssets);
+      this.decoder ??= import('./assets/vendor/meshopt_decoder.module.js?v=15').then(async ({ MeshoptDecoder }) => {
+        if (!MeshoptDecoder.supported) return false;
+        await MeshoptDecoder.ready;
+        this.loader.setMeshoptDecoder(MeshoptDecoder);
+        return true;
+      }).catch(() => false);
+      try {
+        const [ready, response] = await Promise.all([this.decoder, fetch(packed)]);
+        if (ready && response.ok) return await this.loader.parseAsync(await response.arrayBuffer(), localAssets.href);
+      } catch {}
+    }
+    return this.loader.loadAsync(original.href);
+  }
+
   async prepare() {
     await this.load('ore_river_0');
-    this.warm('molten');
-    this.warm('blank');
   }
 
   oreThumbnail(ore) {
@@ -477,9 +497,13 @@ export class ForgeStage {
         this.cache.delete(id);
         this.warmed.delete(id);
       }
-      for (const id of ['molten', 'blank', normal]) this.warm(id);
+      if (run.phase === 'reveal' || run.phase === 'refine') {
+        for (const id of ['molten', 'blank', normal]) this.warm(id);
+      } else if (run.phase === 'forge' && run.hits < 4) {
+        this.warm(normal);
+      }
     }
-    if (run.hits >= 8) for (const id of rare) this.warm(id);
+    if (run.phase === 'forge' && run.hits >= 8) for (const id of rare) this.warm(id);
   }
 
   setHeat(heat, running = false) {
@@ -574,11 +598,19 @@ export class ForgeStage {
     }
     this.want = failedRefining ? run.refinement.reason === 'unmelted' ? oreModelId(ore) : 'molten' :
       this.mode === 'reveal' && this.previewSteel ? 'straight' : stone ? oreModelId(ore) : run.refining?.step === 'molten' ? 'molten' : run.model;
-    if (this.cache.has(this.want)) this.show(this.want);
-    else {
-      const id = this.want;
-      this.load(id).then(() => { if (this.want === id) this.show(id); }).catch(error => console.error('Blade model', error));
+    if (this.cache.has(this.want)) {
+      this.show(this.want);
+      return null;
     }
+    const id = this.want;
+    return this.load(id).then(() => {
+      if (this.want !== id) return false;
+      this.show(id);
+      return true;
+    }).catch(error => {
+      console.error('Blade model', error);
+      return false;
+    });
   }
 
   show(id) {
@@ -865,7 +897,7 @@ export class ForgeStage {
     const failedRefining = mode === 'broken' && this.run?.last?.type === 'refine-fail';
     const working = mode === 'forge' || mode === 'broken' || mode === 'refine';
     const strikeAge = now - (this.bangedAt ?? -5000);
-    const transition = (mode === 'reveal' && elapsed < 1500) || (mode === 'appraise' && elapsed < 5000) ||
+    const transition = (mode === 'reveal' && elapsed < 1500) || (mode === 'appraise' && elapsed < 1850 && !this.reduceMotion) ||
       (this.pieces && now - this.splitAt < 2200) || now - this.swapAt < 350;
     const continuous = (mode === 'refine' && this.refiningRunning) || this.blow || transition ||
       now < this.dirtyUntil || strikeAge < 750 || this.sparks.particles.length > 0;
@@ -881,8 +913,8 @@ export class ForgeStage {
     const shake = this.reduceMotion ? 0 : impulse * (this.lastImpact?.zone === 'tip' ? .045 : .021) * Math.sin(strikeAge / 21);
     const compression = this.reduceMotion ? 0 : impulse * .035 * (1 - clamp(strikeAge / 105, 0, 1));
     const narrow = this.aspect < 1.3;
-    const angle = stone || melt ? -.18 : narrow ? .48 : .29;
-    const startTurn = mode === 'appraise' && !this.reduceMotion ? .46 * (1 - clamp(elapsed / 1300, 0, 1)) : 0;
+    const angle = stone || melt ? -.18 : inspect ? narrow ? .37 : .25 : narrow ? .48 : .29;
+    const startTurn = mode === 'appraise' && !this.reduceMotion ? .34 * (1 - clamp(elapsed / 1480, 0, 1)) ** 2 : 0;
     const stoneTurn = mode === 'reveal' ? 0 : .28;
     const tap = !this.reduceMotion ? Math.sin((now-(this.tappedAt ?? -5000))*.08)*Math.exp(-(now-(this.tappedAt ?? -5000))/85)*.016 : 0;
     this.content.rotation.set(stone || melt ? .18 + this.turnX + tap : .055 + this.turnX, stone || melt ? stoneTurn + this.turnY : -.10 + this.turnY + startTurn, angle + shake);
@@ -895,6 +927,7 @@ export class ForgeStage {
     }
     this.oreUniforms.oreReveal.value = mode === 'reveal' ? clamp((elapsed - 130) / 590, 0, 1) : 0;
     if (this.active?.uniforms.fClock) {
+      this.mesh.scale.setScalar(inspect ? 2.91 : this.shown === 'blank' ? 2.35 : 2.74);
       const { uniforms } = this.active;
       uniforms.fClock.value = this.reduceMotion ? 0 : t;
       uniforms.fHeat.value = mode === 'refine' ? this.heat : mode === 'forge' && this.shown === 'blank' ? .15 : 0;
@@ -920,9 +953,9 @@ export class ForgeStage {
     if (mode === 'reveal') this.flash.position.set(0, .1, .8);
     this.camera.position.x = !this.reduceMotion && this.lastImpact?.large ? Math.sin(strikeAge / 19) * impulse * .035 : 0;
     this.camera.updateMatrixWorld();
-    this.sweep.intensity = mode === 'reveal' ? revealFlash * 2.1 : inspect ? (mode === 'appraise' ? .45 + 1.1 * Math.exp(-elapsed / 820) : .58) : 0;
+    this.sweep.intensity = mode === 'reveal' ? revealFlash * 2.1 : inspect ? (mode === 'appraise' ? .50 + .62 * Math.exp(-elapsed / 520) : .61) : 0;
     this.sweep.position.x = mode === 'appraise' ? lerp(-2.8, 2.6, clamp(elapsed / 1500, 0, 1)) : .8;
-    this.key.color.set(stone && mode !== 'refine' ? 0xe8efff : 0xffcfad);
+    this.key.color.set(stone && mode !== 'refine' ? 0xe8efff : inspect ? 0xffead8 : 0xffcfad);
     this.key.intensity = mode === 'ore' ? (this.inspection==='lamp' ? .42 : 2.65) : mode === 'refine' ? 2.25 : mode === 'appraise' ? 2.65 : mode === 'reveal' ? 2.45 + revealFlash * .65 : 2.9;
     const blow = this.blow;
     this.trail.visible = false;

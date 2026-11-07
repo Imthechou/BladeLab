@@ -1,4 +1,4 @@
-import { LOOKS } from './forge.js?v=14';
+import { LOOKS } from './forge.js?v=15';
 
 export const lookCodes = Object.fromEntries(Object.entries(LOOKS).map(([slot, names]) =>
   [slot, Object.fromEntries(Object.keys(names).map((id, index) => [id, index]))]));
@@ -43,20 +43,21 @@ vec3 lookSteel(int style, float tier, vec2 uv, float edge, float coarse, inout f
     return mix(vec3(.48,.59,.65), vec3(.67,.75,.77), (1.-satin)*.55 + high*edge*.30);
   }
   if (style == ${metal.gunmetal}) {
-    float silk = forgeBand(uv.y*31. + p.x*2. + fMetalLayout.w, .14);
+    float silk = forgeBand(uv.y*22. + p.x*1.6 + fMetalLayout.w, .14);
     float bevel = forgeBand((uv.y-p.x*.61)*37., .095) * edge;
     rough = .32 + (silk-.45)*(.055+.052*mid) - bevel*.11*high;
     return vec3(.24,.32,.43) * (1. + silk*(.16+.22*mid) + bevel*.24*high);
   }
   if (style == ${metal.obsidian}) {
-    rough = .269 - glint*.038 - mid*.054 - high*max(edge, smoothstep(.79,.99,uv.y))*.040;
-    return mix(vec3(.105,.095,.137), vec3(.40,.38,.46), high*max(edge, smoothstep(.79,.99,uv.y))*.53);
+    float rim = max(edge,smoothstep(.77,.99,uv.y));
+    rough = .264 - glint*.031 - mid*.054 - high*rim*.047;
+    return mix(vec3(.105,.095,.137), vec3(.44,.41,.48), rim*(.10+.45*high));
   }
   if (style == ${metal.copper}) {
-    float dents = smoothstep(.39,.76,forgeNoise(vec2(p.x*43.,p.y*17.)+fMetalLayout.w*19.));
-    float rim = 1.-smoothstep(.028,.19,abs(dents-.54));
-    rough = .306 + dents*.15 - mid*.041 - high*rim*.076;
-    return mix(vec3(.46,.225,.11),vec3(.73,.46,.22),dents*(.39+.21*mid)+rim*high*.22);
+    float dents = smoothstep(.27,.73,forgeNoise(vec2(p.x*26.,p.y*12.)+fMetalLayout.w*19.));
+    float burnish = 1.-smoothstep(.07,.29,abs(p.y-p.x*.27+.06));
+    rough = .296 + dents*.070 - mid*.043 - high*burnish*.083;
+    return mix(vec3(.47,.253,.126),vec3(.73,.46,.22),dents*(.24+.13*mid)+burnish*high*.28);
   }
   rough = .32;
   return vec3(.35,.38,.40) * (.95+.10*coarse);
@@ -88,7 +89,7 @@ vec2 lookDot(vec2 p, float seed, float radius) {
   return vec2(lookLine(d,radius),hash);
 }
 
-float lookPattern(int style, float tier, vec2 uv, float coarse, inout vec3 steel, inout float rough, out float seam) {
+vec2 lookPattern(int style, float tier, vec2 uv, float coarse, inout vec3 steel, inout float rough, out float seam) {
   vec2 p = lookPoint(uv, fPatternLayout);
   float phase = fPatternLayout.w * forgeTurn;
   float mid = step(1.5,tier), high = step(2.5,tier);
@@ -156,7 +157,7 @@ float lookPattern(int style, float tier, vec2 uv, float coarse, inout vec3 steel
     foil = max(forgeBand(ray-.24,.098),twin*.65);
     float crest = abs(p.x-.18)*1.7+abs(p.y+.09)*.85;
     ink = max(ink,high*(1.-smoothstep(.10,.19,crest))*.83);
-    foil = max(foil,high*lookLine(crest-.167,.030));
+    foil = max(foil,high*lookLine(crest-.167,.044));
     bright = mineralAccent(vec3(.66,.65,.54),.22);
   } else if (style == ${pattern.web}) {
     vec2 lattice = lookWeb(p*vec2(1.,.60));
@@ -176,7 +177,7 @@ float lookPattern(int style, float tier, vec2 uv, float coarse, inout vec3 steel
     float wave = sin(p.x*17.2+phase)*.215;
     float strandA = lookLine(p.y-wave,.126), strandB = lookLine(p.y+wave,.126);
     float overlap = min(strandA,strandB);
-    ink = .79*(1.-max(strandA,strandB))+overlap*.57*mid;
+    ink = .79*(1.-max(strandA,strandB))+overlap*.70*mid;
     foil = max(lookLine(p.y-wave-.047,.067),lookLine(p.y+wave+.047,.067));
     foil = max(foil*(1.-overlap*.69*mid),high*lookLine(abs(p.y)-.34-.041*sin(p.x*38.),.041)*.77);
   } else if (style == ${pattern.strata}) {
@@ -188,7 +189,7 @@ float lookPattern(int style, float tier, vec2 uv, float coarse, inout vec3 steel
     dark = mix(steel*.24,vec3(.10,.125,.16),.46);
   } else if (style == ${pattern.honeycomb}) {
     vec2 hex = lookHex(vec2(p.x*10.,p.y*4.3)*(1.+mid*(1.-smoothstep(.07,.42,uv.y))*.68));
-    float inset = 1.-smoothstep(.41,.53,abs(p.y+p.x*.66));
+    float inset = 1.-smoothstep(.42,.56,abs(p.y+p.x*.66));
     ink = inset*max(smoothstep(.39,.49,hex.x)*.88,hex.y*.38);
     foil = inset*(lookLine(hex.x-.347,.039)*.78+high*step(.57,hex.y)*(1.-smoothstep(.23,.37,hex.x))*.77);
   }
@@ -198,10 +199,10 @@ float lookPattern(int style, float tier, vec2 uv, float coarse, inout vec3 steel
   steel = mix(steel,dark,ink*(.76+.12*fRefine));
   steel = mix(steel,bright,foil*(.62+.10*fRefine));
   rough += ink*.142 - foil*.097;
-  return ink;
+  return vec2(ink,foil);
 }
 
-void lookFilm(int style, float tier, vec2 uv, float view, float edge, float ink, float focus, inout vec3 steel, inout float rough) {
+void lookFilm(int style, float tier, vec2 uv, float view, float edge, vec2 relief, float focus, inout vec3 steel, inout float rough) {
   vec2 p = lookPoint(uv, fFilmLayout);
   float phase = fFilmLayout.w * forgeTurn;
   float mid = step(1.5,tier), high = step(2.5,tier);
@@ -221,16 +222,16 @@ void lookFilm(int style, float tier, vec2 uv, float view, float edge, float ink,
   } else if (style == ${film.doppler}) {
     float tide = sin(p.x*9.2 + sin(p.y*4.5+phase)*1.46 + p.y*.9);
     coat = mix(vec3(.036,.082,.218),vec3(.32,.096,.41),smoothstep(-.42,.55,tide));
-    float current = lookLine(tide-.21,.14);
-    float island = (1.-smoothstep(.18,.64,abs(tide+view*.91-.49)))*(.25+.75*smoothstep(.03,.32,view+.09*uv.y));
-    coat = mix(coat,vec3(.056,.36,.50),max(mid*current*.60,high*island*.75));
-    gloss = .14;
+    float current = lookLine(tide-.21,.19);
+    float island = (1.-smoothstep(.20,.67,abs(tide+view*1.11-.57)))*(.48+.52*smoothstep(.03,.32,view+.09*uv.y));
+    coat = mix(coat,vec3(.045,.39,.54),max(mid*current*.57,high*island*.89));
+    gloss = .159 - high*island*.039;
   } else if (style == ${film.rainbow}) {
     float center = p.y - sin(p.x*6.+phase)*.19;
     float prism = uv.x*5.5 + uv.y*2.3 + view*5.5 + phase*.47;
     prism += mid*smoothstep(-.09,.13,p.x)*1.30 + high*smoothstep(.02,.22,p.y)*(1.75+view*4.);
-    coat = vec3(.35) + .27*cos(prism+vec3(0.,2.094,4.188));
-    cover = .30 + .70*(1.-smoothstep(.27,.45,abs(center)));
+    coat = vec3(.30) + .229*cos(prism+vec3(0.,2.094,4.188));
+    cover = .21 + .79*(1.-smoothstep(.24,.47,abs(center)));
     gloss = .18;
   } else if (style == ${film.gold}) {
     float sunset = uv.x + (.5-fFilmLayout.x)*.52 + .034*sin(phase) + p.y*(.12+.39*mid);
@@ -242,8 +243,8 @@ void lookFilm(int style, float tier, vec2 uv, float view, float edge, float ink,
   } else if (style == ${film.silverline}) {
     float track = p.y+p.x*.22 - sin(p.x*7.+phase)*.082 - (view-.12)*.39;
     float mirror = lookLine(track,.078);
-    mirror = max(mirror,mid*lookLine(track+.26,.044)*.78);
-    mirror = max(mirror,high*lookLine(track+(uv.x-.70)*1.3,.059)*smoothstep(.60,.82,uv.x));
+    mirror = max(mirror,mid*lookLine(track+.26,.052)*.84);
+    mirror = max(mirror,high*lookLine(track+(uv.x-.62)*.96,.062)*smoothstep(.44,.75,uv.x));
     coat = mix(vec3(.16,.23,.33),vec3(.76,.82,.91),mirror);
     cover = .30+.70*mirror;
     gloss = mix(.34,.11,mirror);
@@ -251,26 +252,27 @@ void lookFilm(int style, float tier, vec2 uv, float view, float edge, float ink,
   } else if (style == ${film.nacre}) {
     float ribbon = p.y-.19*sin(p.x*5.+phase)+(view-.13)*.27;
     float pearl = 1.-smoothstep(.09,.42,abs(ribbon));
-    float rim = lookLine(abs(ribbon)-.24,.075)*mid;
-    coat = mix(vec3(.35,.43,.48),vec3(.69,.64,.57),pearl);
-    coat = mix(coat,vec3(.54,.39,.58),rim*.46);
+    float rim = lookLine(abs(ribbon)-.22,.080);
+    vec3 pearlTint = mix(vec3(.66,.55,.62),vec3(.45,.68,.66),smoothstep(.07,.42,view+.10*p.x));
+    coat = mix(vec3(.32,.44,.47),vec3(.70,.66,.62),pearl);
+    coat = mix(coat,pearlTint,rim*(.38+.24*mid));
     float innerPearl = lookLine(ribbon-.084+view*.30,.12)*high;
     coat = mix(coat,mineralAccent(vec3(.70,.52,.64),.38),innerPearl*(.50+.42*smoothstep(.04,.39,view)));
-    cover = .46+.54*max(pearl,rim);
-    gloss = .32;
+    cover = .38+.62*max(pearl,rim);
+    gloss = .324-.08*pearl;
   } else if (style == ${film.peacock}) {
     float tilt = uv.y*.62 + view*(1.32+mid*.65) + p.x*.27;
     tilt += mid*sin(p.x*10.+phase)*.12;
     tilt += high*(smoothstep(.10,.28,uv.y)-.5)*(.46-view*.63);
     float flip = smoothstep(.36,.62,tilt);
-    coat = mix(vec3(.61,.344,.064),vec3(.040,.31,.265),flip);
+    coat = mix(vec3(.60,.333,.072),vec3(.033,.30,.245),flip);
     gloss = mix(.198,.245,flip);
     cover = .93;
   } else if (style == ${film.smoke}) {
     float band = p.y-p.x*.36+(view-.16)*.56;
     float window = mid*lookLine(band,.096);
     float silver = max(edge*.83,high*lookLine(band-.16,.076)*.89);
-    coat = mix(vec3(.035,.048,.068),vec3(.27,.34,.44),max(window*.70,silver));
+    coat = mix(vec3(.055,.053,.065),vec3(.32,.35,.42),max(window*.70,silver));
     cover = .71+.15*(1.-smoothstep(.23,.51,abs(band)))+.14*silver;
     gloss = .18 - silver*.07;
   } else if (style == ${film.verdigris}) {
@@ -287,14 +289,14 @@ void lookFilm(int style, float tier, vec2 uv, float view, float edge, float ink,
     float porcelain = smoothstep(-.043,.030,boundary);
     cover = porcelain*(.84 + high*.13*smoothstep(.06,.35,boundary));
     cover -= mid*lookLine(boundary-.017,.042)*.27*porcelain;
-    coat = mix(vec3(.43,.58,.68),vec3(.71,.77,.79),smoothstep(.02,.28,boundary));
-    gloss = .48;
+    coat = mix(vec3(.40,.55,.65),vec3(.73,.75,.73),smoothstep(.035,.26,boundary));
+    gloss = .43 - .11*lookLine(boundary-.038,.037);
     inherit = .09;
   } else if (style == ${film.satin}) {
     float bevel = max(edge,1.-smoothstep(.17,.29,uv.y + p.x*.082));
     float spine = mid*smoothstep(.75,.95,uv.y);
     float shine = max(bevel,spine*.64);
-    coat = mix(vec3(.23,.32,.41),vec3(.69,.73,.75),shine);
+    coat = mix(vec3(.17,.26,.34),vec3(.69,.74,.78),shine);
     float seam = lookLine(uv.y-.34-p.x*.13 + view*.28,.070);
     coat += high*vec3(.24,.23,.20)*max(seam*.91,mix(view,1.-view,bevel)*.46);
     cover = .63 + .37*shine;
@@ -306,14 +308,16 @@ void lookFilm(int style, float tier, vec2 uv, float view, float edge, float ink,
     float companion = mid*lookLine(inner-.169,.044);
     float hue = outer*19.+phase+view*(3.4+high*5.);
     coat = vec3(.36)+.26*cos(hue+vec3(0.,2.094,4.188)+high*companion*1.6);
-    cover = .16 + .84*max(ring,companion);
+    cover = .11 + .82*max(ring,companion);
     gloss = .253-.085*ring;
   }
 
-  coat = mineralAccent(coat, inherit) * (1. - ink*.40);
-  float blend = clamp(cover*(.67+.07*mid+.05*high)*(1.-focus*.29),0.,.79);
+  coat = mineralAccent(coat, inherit) * (1. - relief.x*.56);
+  // The film tints the metal reflection. Foil edges keep some of their
+  // original steel and the recessed lines keep their roughness.
+  float blend = clamp(cover*(.65+.07*mid+.052*high)*(1.-focus*.34)*(1.-relief.y*.43),0.,.77);
   steel = mix(steel,coat,blend);
-  rough = mix(rough, gloss+(1.-fRefine)*.143, blend);
+  rough = mix(rough, gloss+(1.-fRefine)*.143+relief.x*.087-relief.y*.043, blend);
 }
 
 vec4 lookEffect(int style, float tier, vec2 uv, float edge, float coarse, float seam) {
@@ -348,8 +352,10 @@ vec4 lookEffect(int style, float tier, vec2 uv, float edge, float coarse, float 
     float head = min(tail,1.-tail);
     motif = stream * (.45+.55*(1.-smoothstep(.32,.65,abs(p.x))));
     motion = stream*exp(-head*(12.-5.*mid));
-    accent = high*lookLine(path-.098,.057)*exp(-tail*4.8)*smoothstep(.01,.085,tail);
-    light = mix(vec3(.14,.70,1.),vec3(.61,.38,.96),smoothstep(.13,.96,uv.x));
+    float taper = 1.-smoothstep(.21,.52,abs(p.x));
+    float ribbon = lookLine(path-.153-.061*sin(p.x*9.+phase),.052)*taper;
+    accent = high*ribbon*(.38+.62*exp(-head*5.));
+    light = mix(vec3(.20,.72,.89),vec3(.68,.31,.88),smoothstep(.10,.92,uv.x+high*ribbon*.24));
     inherit = .42;
   } else if (style == ${fx.tip}) {
     vec2 q = (uv-vec2(.82 + p.x*.065,.51+p.y*.08))*vec2(1.,.38);
@@ -361,15 +367,17 @@ vec4 lookEffect(int style, float tier, vec2 uv, float edge, float coarse, float 
     float reach = .131+mid*.051+high*.077*burst;
     motif = star*(1.-smoothstep(.059,reach,lengthToTip))*.97;
     motion = motif*(.32+.68*wash);
-    accent = high*(1.-smoothstep(.013,.048,lengthToTip))*burst;
+    float rays = lookLine(abs(q.y)-abs(q.x)*.28,.013)*(1.-smoothstep(.095,.232,lengthToTip));
+    accent = high*max(1.-smoothstep(.013,.054,lengthToTip),rays*.83)*burst;
     light = vec3(1.,.77,.44);
     inherit = .26;
   } else if (style == ${fx.flame}) {
     float tongue = (.5+.5*sin(p.x*24.-time*4.+phase))*(.54+.46*sin(p.x*13.+time*2.));
     float tongueBase = .77 - .15*tongue - mid*.061;
-    motif = smoothstep(tongueBase-.032,tongueBase+.033,uv.y)*(1.-smoothstep(.92,.995,uv.y));
-    motion = motif*(.37+.63*smoothstep(.35,.93,tongue));
-    accent = high*lookLine(uv.y-tongueBase+.05,.033)*wash;
+    float wisps = smoothstep(tongueBase-.038,tongueBase+.073,uv.y)*(1.-smoothstep(.85,.99,uv.y));
+    motif = wisps*.54;
+    motion = wisps*(.22+.57*smoothstep(.35,.93,tongue));
+    accent = high*lookLine(uv.y-tongueBase+.023,.020)*wash;
     light = vec3(.20,.62,1.);
   } else if (style == ${fx.vein}) {
     float root = p.y+sin(p.x*12.+phase)*.13;
@@ -379,7 +387,7 @@ vec4 lookEffect(int style, float tier, vec2 uv, float edge, float coarse, float 
     motif = max(motif,mid*lookLine(twig,.026)*.80);
     motion = motif*wash;
     accent = high*lookLine(twig+.08*sin(uv.x*20.),.020)*(1.-wash)*smoothstep(.02,.32,p.x);
-    light = vec3(.42,.70,1.);
+    light = vec3(.29,.87,.78);
   } else if (style == ${fx.arc}) {
     float zig = abs(fract(p.x*8.8+fFxLayout.w)-.5)*.54;
     float arc = p.y + zig-.11-.092*sin(p.x*11.+phase);
@@ -391,10 +399,11 @@ vec4 lookEffect(int style, float tier, vec2 uv, float edge, float coarse, float 
   } else if (style == ${fx.wave}) {
     float d = length(p*vec2(1.,.49));
     float radius = fract(time*.57)*(.40+.14*mid)+.049;
-    motif = lookLine(d-.196,.025)*.58;
-    motion = lookLine(d-radius,.041)*(1.-smoothstep(.39,.59,radius));
+    float brokenRing = .59+.41*smoothstep(-.66,.66,sin(p.y*11.+p.x*15.+phase));
+    motif = lookLine(d-.196,.014)*.34;
+    motion = (lookLine(d-radius,.021)*.82+lookLine(d-radius,.051)*.18)*brokenRing*(1.-smoothstep(.39,.59,radius));
     float echo = fract(time*.57-.22)*(.40+.14*mid)+.049;
-    accent = high*lookLine(d-echo,.028)*(1.-smoothstep(.31,.55,echo));
+    accent = high*lookLine(d-echo,.018)*brokenRing*(1.-smoothstep(.30,.54,echo));
     light = vec3(.21,.74,.82);
   } else if (style == ${fx.vortex}) {
     vec2 q = p*vec2(1.,.51);
@@ -402,9 +411,9 @@ vec4 lookEffect(int style, float tier, vec2 uv, float edge, float coarse, float 
     float rotation = atan(q.y,q.x+.00001)/forgeTurn;
     float spiral = rotation+r*4.1-time*.30;
     float disk = 1.-smoothstep(.17+.04*mid,.27+.047*mid,r);
-    motif = forgeBand(spiral,.105)*disk;
-    motion = max(motif*wash,mid*forgeBand(spiral+.48,.072)*disk*.84);
-    accent = high*forgeBand(rotation-r*7.+time*.38,.12)*(1.-smoothstep(.078,.157,r));
+    motif = forgeBand(spiral,.070)*disk*(.56+.36*wash);
+    motion = max(motif*wash,mid*forgeBand(spiral+.48,.045)*disk*.66);
+    accent = high*forgeBand(rotation-r*7.+time*.38,.085)*(1.-smoothstep(.062,.161,r));
     light = vec3(.64,.38,.93);
   } else if (style == ${fx.stardust}) {
     vec2 dotA = lookDot(uv*vec2(20.,8.),fFxLayout.w,.19);
@@ -417,28 +426,29 @@ vec4 lookEffect(int style, float tier, vec2 uv, float edge, float coarse, float 
     light = vec3(.64,.79,1.);
   } else if (style == ${fx.frost}) {
     vec2 cells = uv*vec2(14.,6.)+fFxLayout.w;
-    vec2 local = fract(cells)-.5;
-    float flake = abs(local.x)+abs(local.y)*.83;
     float frozen = forgeHash(floor(cells));
+    vec2 local = fract(cells)-vec2(.38+frozen*.24,.39+fract(frozen*7.9)*.22);
+    float flake = abs(local.x+local.y*.32)+abs(local.y)*(.52+frozen*.49);
     float spread = smoothstep(.47-.21*mid,.81,uv.y+.19*sin(p.x*7.+phase));
-    motif = lookLine(flake-.23,.072)*spread*step(.35,frozen);
+    motif = lookLine(flake-.21,.035)*spread*step(.35,frozen)*(.51+.47*frozen);
     motion = motif*smoothstep(.10,.84,.5+.5*cos(frozen*11.-time*2.7));
     accent = high*lookLine(flake,.17)*spread*smoothstep(.57,.94,.5+.5*sin(time*2.7-uv.x*5.));
     light = vec3(.58,.83,1.);
   } else if (style == ${fx.shards}) {
-    vec2 cell = vec2(p.x*7.5+p.y*1.6,p.x*1.9-p.y*4.1) + fFxLayout.w;
+    vec2 cell = vec2(p.x*6.5+p.y*2.4+coarse*.47,p.x*1.9-p.y*4.1+coarse*.27) + fFxLayout.w;
     float facet = forgeHash(floor(cell));
     float ridge = max(forgeBand(cell.x+.5,.030),forgeBand(cell.y+.5,.030));
-    float inset = smoothstep(.44-.11*mid,.84,facet)*(1.-ridge);
-    motif = inset*.75;
-    motion = inset*pow(.5+.5*cos(time*3.3+facet*17.),3.);
+    float inset = smoothstep(.47-.11*mid,.86,facet)*(1.-ridge);
+    float plane = .24+.76*smoothstep(.08,.71,fract(cell.x)+fract(cell.y)*.31);
+    motif = inset*.46*plane;
+    motion = inset*plane*pow(.5+.5*cos(time*3.3+facet*17.),3.);
     accent = high*ridge*smoothstep(.46,.84,facet)*(.34+.66*wash);
     light = vec3(.69,.78,.91);
   }
 
   float clarity = mix(.59+.28*smoothstep(.20,.68,coarse),1.,fRefine);
-  float strength = min(.79, motif*.29 + motion*.47*clarity + accent*.25) * smoothstep(-.06,.025,uv.x);
-  return vec4(mineralAccent(light,inherit)*strength,clamp(strength*1.45,0.,1.));
+  float strength = min(.64, motif*.28 + motion*.39*clarity + accent*.26) * smoothstep(-.06,.025,uv.x);
+  return vec4(mineralAccent(light,inherit)*strength,clamp(strength*1.61,0.,1.));
 }
 #endif
 `;
