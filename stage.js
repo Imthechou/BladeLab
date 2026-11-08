@@ -236,9 +236,15 @@ function makeSparks() {
 }
 
 export class ForgeStage {
-  constructor(canvas) {
+  constructor(canvas, initialModels = []) {
     this.canvas = canvas;
     this.renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+    this.loader = new T.GLTFLoader();
+    this.cache = new Map();
+    this.pending = new Map();
+    this.prefetchedModels = new Map();
+    // Start the offered specimens while the renderer builds the studio lighting.
+    for (const id of initialModels) this.load(id).catch(() => {});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     this.budget = new RenderBudget(this.renderer.getPixelRatio());
     this.renderer.setClearColor(0x000000, 0);
@@ -280,9 +286,6 @@ export class ForgeStage {
     this.trail.frustumCulled = false;
     this.trail.visible = false;
     this.scene.add(this.anvil, this.crucible, this.hammer, this.sparks.view, this.trail);
-    this.loader = new T.GLTFLoader();
-    this.cache = new Map();
-    this.pending = new Map();
     this.warmed = new Set();
     this.warmQueue = [];
     this.warmQueued = new Set();
@@ -326,13 +329,13 @@ export class ForgeStage {
     requestAnimationFrame(this.frame);
   }
 
-  load(id) {
+  load(id, priority = 'auto') {
     if (this.cache.has(id)) return Promise.resolve(this.cache.get(id));
     if (this.pending.has(id)) return this.pending.get(id);
     const name = modelFiles[id] + '.glb';
     const ore = isOreModel(id);
     const original = new URL('models/' + name, ore ? localAssets : sharedAssets);
-    const request = ore ? this.loader.loadAsync(original.href) : this.loadWorkshopModel(name, original);
+    const request = ore ? this.loader.loadAsync(original.href) : this.loadWorkshopModel(id, original, priority);
     const pending = request.then(({ scene }) => {
       let source;
       scene.traverse(obj => { if (obj.isMesh && !source) source = obj; });
@@ -380,58 +383,83 @@ export class ForgeStage {
     this.warmed.delete(id);
   }
 
-  async loadWorkshopModel(name, original) {
+  async fetchWorkshopModel(id, priority) {
+    const packed = new URL(`forge-models/${modelFiles[id]}.glb`, localAssets);
+    if (KNIFE_IDS.includes(id)) packed.searchParams.set('v', '16');
+    const response = await fetch(packed, { priority });
+    return response.ok ? response.arrayBuffer() : null;
+  }
+
+  prefetchWorkshopModel(id, priority) {
+    if (typeof WebAssembly !== 'object' || navigator.connection?.saveData ||
+        this.cache.has(id) || this.pending.has(id) || this.prefetchedModels.has(id)) return;
+    // Download ahead of the furnace, leaving decode and GPU work to the idle queue.
+    this.prefetchedModels.set(id, this.fetchWorkshopModel(id, priority).catch(() => null));
+  }
+
+  async loadWorkshopModel(id, original, priority) {
     if (typeof WebAssembly === 'object') {
-      const packed = new URL('forge-models/' + name, localAssets);
-      if (name.startsWith('knife_')) packed.searchParams.set('v', '16');
       this.decoder ??= import('./assets/vendor/meshopt_decoder.module.js?v=16').then(async ({ MeshoptDecoder }) => {
         if (!MeshoptDecoder.supported) return false;
         await MeshoptDecoder.ready;
         this.loader.setMeshoptDecoder(MeshoptDecoder);
         return true;
       }).catch(() => false);
+      const prefetched = this.prefetchedModels.get(id);
+      this.prefetchedModels.delete(id);
       try {
-        const [ready, response] = await Promise.all([this.decoder, fetch(packed)]);
-        if (ready && response.ok) return await this.loader.parseAsync(await response.arrayBuffer(), localAssets.href);
+        const [ready, data] = await Promise.all([this.decoder, prefetched ?? this.fetchWorkshopModel(id, priority)]);
+        if (ready && data) return await this.loader.parseAsync(data, localAssets.href);
       } catch {}
     }
     return this.loader.loadAsync(original.href);
   }
 
-  async prepare() {
-    await this.load('ore_river_0');
+  makeThumbnailStage() {
+    const uniforms = T.UniformsUtils.clone(this.oreUniforms);
+    const specimen = new T.Mesh(undefined, makeOreMaterial(null, uniforms));
+    specimen.rotation.set(.20, .28, -.14);
+    const scene = new T.Scene();
+    scene.environment = this.scene.environment;
+    scene.add(specimen, new T.HemisphereLight(0xe8efff, 0x302e2b, 1.3));
+    light(0xffe7d1, 3, -2, 3, 4, scene);
+    light(0xc6e5ff, 1.1, 3, 1, 2, scene);
+    const camera = new T.OrthographicCamera(-1.08, 1.08, .75, -.75, .1, 10);
+    camera.position.set(0, .15, 4);
+    camera.lookAt(0, 0, 0);
+    const width = 216, height = 150;
+    const target = new T.WebGLRenderTarget(width, height);
+    target.texture.colorSpace = T.SRGBColorSpace;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    return { uniforms, specimen, scene, camera, target, canvas, ctx,
+      image: ctx.createImageData(width, height), pixels: new Uint8Array(width * height * 4) };
   }
 
   oreThumbnail(ore) {
     const key = [ore.id,ore.figure,ore.material,ore.variant,ore.window,ore.tint,ore.exposure,ore.clarity].join('|');
     if(this.thumbnailCache.has(key))return this.thumbnailCache.get(key);
     const pending=this.load(oreModelId(ore)).then(({mesh})=>{
-      const u=T.UniformsUtils.clone(this.oreUniforms), rock=oreMaterialOf(ore);
+      this.thumbnailStage ??= this.makeThumbnailStage();
+      const { uniforms: u, specimen, scene, camera, target, canvas, ctx, image, pixels } = this.thumbnailStage;
+      const rock=oreMaterialOf(ore);
       for(const [name,value] of Object.entries({oreSeed:ore.figure,oreGrade:0,oreHeat:0,oreReveal:0,oreLamp:0,
         oreFamily:familyOrder.indexOf(ore.family),oreMaterial:rock.style,oreRoughness:rock.roughness,
         oreMetalness:rock.metalness,oreWindow:ore.window?1:0,oreVein:ore.vein/100,oreFlaw:ore.flaw/100,
         oreLuster:ore.luster/100,oreDensity:ore.density/100,oreCrust:ore.crust/100,orePurity:ore.purity/100}))u[name].value=value;
       u.oreBaseColor.value.set(rock.base);setOreOptics(u,ore);
-      const material=makeOreMaterial(null,u,ore.family);
-      const specimen=new T.Mesh(mesh.geometry,material);
-      specimen.rotation.set(.20,.28,-.14);
-      const scene=new T.Scene();scene.environment=this.scene.environment;
-      scene.add(specimen,new T.HemisphereLight(0xe8efff,0x302e2b,1.3));
-      light(0xffe7d1,3,-2,3,4,scene);light(0xc6e5ff,1.1,3,1,2,scene);
-      const camera=new T.OrthographicCamera(-1.08,1.08,.75,-.75,.1,10);
-      camera.position.set(0,.15,4);camera.lookAt(0,0,0);
-      const width=216,height=150;
-      const target=new T.WebGLRenderTarget(width,height);target.texture.colorSpace=T.SRGBColorSpace;
+      specimen.geometry = mesh.geometry;
+      const { width, height } = target;
       const renderer=this.renderer, old=renderer.getRenderTarget(), color=renderer.getClearColor(new T.Color()),alpha=renderer.getClearAlpha();
       try{
         renderer.setRenderTarget(target);renderer.setClearColor(0x000000,0);renderer.render(scene,camera);
-        const pixels=new Uint8Array(width*height*4);renderer.readRenderTargetPixels(target,0,0,width,height,pixels);
-        const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
-        const ctx=canvas.getContext('2d'),image=ctx.createImageData(width,height);
+        renderer.readRenderTargetPixels(target,0,0,width,height,pixels);
         for(let y=0;y<height;y++)image.data.set(pixels.subarray((height-y-1)*width*4,(height-y)*width*4),y*width*4);
         ctx.putImageData(image,0,0);return canvas.toDataURL('image/png');
       }finally{
-        renderer.setRenderTarget(old);renderer.setClearColor(color,alpha);target.dispose();material.dispose();
+        renderer.setRenderTarget(old);renderer.setClearColor(color,alpha);
         this.invalidate(100);
       }
     }).catch(error=>{this.thumbnailCache.delete(key);throw error;});
@@ -535,8 +563,12 @@ export class ForgeStage {
       this.warmQueue = this.warmQueue.filter(id => keep.has(id));
       this.warmQueued = new Set([...this.warmQueue, ...(this.warmingId && keep.has(this.warmingId) ? [this.warmingId] : [])]);
       for (const id of this.cache.keys()) if (!keep.has(id)) this.disposeAsset(id);
+      for (const id of this.prefetchedModels.keys()) if (!keep.has(id)) this.prefetchedModels.delete(id);
       if (run.phase === 'reveal' || run.phase === 'refine') {
-        for (const id of ['molten', 'blank', normal]) this.warm(id);
+        for (const id of ['molten', 'blank', normal]) {
+          this.prefetchWorkshopModel(id, id === 'molten' ? 'auto' : 'low');
+          this.warm(id);
+        }
       } else if (run.phase === 'forge' && run.hits < 4) {
         this.warm(normal);
       }

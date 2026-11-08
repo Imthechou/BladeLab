@@ -41,11 +41,11 @@ try {
   await page.route(url, route => route.fulfill({
     contentType: 'text/html',
     body: '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}canvas{width:390px;height:330px;display:block}</style><canvas></canvas>' +
-      '<script src="assets/vendor/three.bundle.js"></script><script src="assets/vendor/three.addons.js"></script>',
+      '<script src="assets/vendor/three.runtime.js?v=18"></script>',
   }));
   await page.goto(url, { waitUntil: 'load' });
   await page.evaluate(async ({ run, kits }) => {
-    const { ForgeStage } = await import('./stage.js?v=17');
+    const { ForgeStage } = await import('./stage.js?v=18');
     const stage = new ForgeStage(document.querySelector('canvas'));
     stage.reduceMotion = true;
     const frames = new Map();
