@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('.', import.meta.url));
 const mime = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary',
+  '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary', '.png': 'image/png',
 };
 const allowed = new Set(Object.keys(mime));
 const port = Number(process.env.PORT || 8217);

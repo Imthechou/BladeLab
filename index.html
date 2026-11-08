@@ -4,22 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101111">
-  <title>BladeLab · 锻刀工坊</title>
-  <meta name="description" content="从一块未知的矿石，打出只属于这一炉的刀。">
+  <title>BladeLab · 锻刀大赛</title>
+  <meta name="description" content="选矿锻刀，带着自己的作品走上斩试场。">
   <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css?v=16">
+  <link rel="stylesheet" href="arena/tournament.css?v=1">
   <script defer src="assets/vendor/three.runtime.js?v=18" fetchpriority="high"></script>
   <link rel="modulepreload" href="stage.js?v=18">
   <link rel="modulepreload" href="forge.js?v=16">
   <link rel="modulepreload" href="materials.js?v=17">
   <link rel="modulepreload" href="blade-looks.js?v=17">
-  <script type="module" src="app.js?v=18"></script>
+  <script type="module" src="app.js?v=19"></script>
 </head>
 <body>
   <header class="header frame">
     <div class="identity">
       <img src="assets/mark.svg" alt="" width="38" height="38">
-      <div><strong>BLADE<span>LAB</span></strong><small>独立锻造实验室</small></div>
+      <div><strong>BLADE<span>LAB</span></strong><small>锻刀大赛</small></div>
     </div>
     <div class="header-tools">
       <button class="quiet icon-button" id="sound" type="button" aria-label="静音" aria-pressed="false">
@@ -33,7 +34,14 @@
   </header>
 
   <main class="frame">
-    <nav class="steps" id="steps" aria-label="锻造进度"></nav>
+    <nav class="lab-nav" aria-label="BladeLab">
+      <a href="#forge" data-tab="forge" aria-current="page"><span>01</span> 锻造工坊</a>
+      <a href="#arena" data-tab="arena"><span>02</span> 赛事大厅</a>
+      <button type="button" class="lab-growth" id="growth" aria-haspopup="dialog"></button>
+    </nav>
+    <p id="save-notice" class="lab-notice" role="status" hidden></p>
+    <section id="forge" aria-label="锻造工坊">
+      <nav class="steps" id="steps" aria-label="锻造进度"></nav>
     <div class="workspace">
       <section class="stage" id="stage" aria-label="3D 工作台">
         <canvas id="scene" aria-label="3D 刀具与原料预览"></canvas>
@@ -73,9 +81,18 @@
         <div class="action-stack" id="actions"></div>
       </section>
     </div>
+    </section>
+    <section id="arena" aria-label="赛事大厅" hidden></section>
     <div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
-    <footer class="footer"><span>BLADE LAB / FORGE BUILD 02</span><span>一炉一刃</span></footer>
+    <footer class="footer"><span>BLADELAB / FORGE &amp; TRIAL</span><span>一炉一刃 · 以斩验锋</span></footer>
   </main>
+
+  <dialog id="workshop-progress" class="growth-dialog">
+    <div class="vault-head"><div><div class="eyebrow">WORKSHOP LOG</div><h2>工坊成长</h2></div>
+      <button class="quiet icon-button" type="button" id="close-growth" aria-label="关闭">×</button>
+    </div>
+    <div id="workshop-details"></div>
+  </dialog>
 
   <dialog id="vault">
     <div class="vault-head"><div><div class="eyebrow">THE ARCHIVE</div><h2>藏刀记录</h2></div><button class="quiet icon-button" type="button" id="close-vault" aria-label="关闭">×</button></div>
@@ -84,6 +101,7 @@
         <span id="vault-loading" role="status" hidden></span>
       </div>
       <div id="vault-looks"></div>
+      <button type="button" class="secondary vault-enter" id="vault-enter">带此刀参赛</button>
     </div>
     <div id="vault-list"></div>
   </dialog>

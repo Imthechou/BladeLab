@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
-import { FITS, buyOre, freshSave, modelCandidates, offers, oreModelId } from '../forge.js';
+import { FITS, buyOre, freshSave, modelCandidates, offers, oreModelId, STORAGE_KEY } from '../forge.js';
 
 const candidate = process.env.QA_ORIGIN || 'http://127.0.0.1:8217/';
 const output = process.env.QA_OUTPUT || 'artifacts/blade-loading';
-const storageKey = process.env.QA_STORAGE_KEY || 'bladelab.forge.1';
+const storageKey = process.env.QA_STORAGE_KEY || STORAGE_KEY;
 const network = { offline: false, latency: 70, downloadThroughput: 200000, uploadThroughput: 100000 };
 const browser = await chromium.launch({ headless: true,
   args: ['--enable-webgl', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader'] });

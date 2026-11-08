@@ -1,5 +1,5 @@
 import {
-  STORAGE_KEY, WINDOW_PRICE, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, RARE_ODDS, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
+  STORAGE_KEY, V18_STORAGE_KEYS, WINDOW_PRICE, LOT_SIZE, BATCHES, HEAT, fittingPrice, PHASES, GRADES, ORE_TIERS, rareOdds, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
   fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection, oreModelId,
@@ -7,6 +7,8 @@ import {
 import { ForgeStage } from './stage.js?v=18';
 import { ForgeSound } from './sound.js?v=16';
 import { createQaSession } from './qa.js?v=16';
+import { workshopPerks, workshopStatus, XP_THRESHOLDS } from './workshop.js';
+import { eligibleBlades, masteryOf } from './tournament.js';
 
 const get = id => document.getElementById(id);
 const canvas = get('scene');
@@ -23,8 +25,10 @@ const roman = ['', ' I', ' II', ' III'];
 const fmt = p => (p * 100).toFixed(p === 0 ? 0 : 1) + '%';
 const signed = n => (n < 0 ? '−' : n > 0 ? '+' : '') + Math.abs(n);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
-let save = restore();
+let savedText = null;
+const save = restore();
 let stage;
+let stageAttempted = false;
 let busy = false;
 let queuedHit;
 let queuedStop = false;
@@ -36,33 +40,68 @@ let saveTask;
 let drag;
 let trayKey;
 let webglError = false;
-let storageFailed = false;
+let storageMessage = '';
 let inspectionMode = 'natural';
 let toolStone = '';
 let echoTimer;
 let vaultView;
+let tournament, tournamentLoad, preferredBlade, vaultBlade;
+let inArena = false;
 
 function restore() {
   if (qa) return qa.save;
-  try {
-    return migrateSave(JSON.parse(localStorage.getItem(STORAGE_KEY))) || freshSave();
-  } catch {}
+  for (const key of [STORAGE_KEY, ...V18_STORAGE_KEYS]) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (key === STORAGE_KEY) savedText = raw;
+      const existing = migrateSave(JSON.parse(raw));
+      if (existing) return existing;
+    } catch {}
+  }
   return freshSave();
 }
 
-function persist() {
+function persist(data = save) {
   if (saveTask) {
     if (saveTask.idle) cancelIdleCallback(saveTask.id);
     else clearTimeout(saveTask.id);
     saveTask = null;
   }
-  if (qa) return;
+  if (qa) return true;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(save));
+    if (localStorage.getItem(STORAGE_KEY) !== savedText) {
+      return showStorageNotice('存档已在另一标签页更新。请刷新此页，再继续保存。');
+    }
+    const text = JSON.stringify(data);
+    if (text !== savedText) localStorage.setItem(STORAGE_KEY, text);
+    savedText = text;
+    get('save-notice').hidden = true;
+    return true;
   } catch {
-    if (!storageFailed) get('announcer').textContent = '浏览器限制本地存档，本页可继续试玩。';
-    storageFailed = true;
+    return showStorageNotice('本地存档暂不可用。试刀练习仍可进行。');
   }
+}
+
+function showStorageNotice(message) {
+  storageMessage = message;
+  const notice = get('save-notice');
+  notice.textContent = message;
+  notice.hidden = false;
+  return false;
+}
+
+async function commitTournament(change) {
+  const apply = () => {
+    const draft = structuredClone(save);
+    const result = change(draft);
+    if (result.error) return result;
+    if (!persist(draft)) return { error: storageMessage };
+    save.credits = draft.credits;
+    save.tournament = draft.tournament;
+    renderBalance();
+    return result;
+  };
+  return navigator.locks ? navigator.locks.request(STORAGE_KEY, apply) : apply();
 }
 
 function persistWhenIdle() {
@@ -92,6 +131,11 @@ function lookChips(run) {
   return `<div class="look-list">${fields.map(([slot, names]) => `<span class="look-chip ${run.skin.levels[slot] >= 3 ? 'rarity' : ''}">${names[run.skin[slot]]}${roman[run.skin.levels[slot]] || ''}</span>`).join('')}${combination ? `<span class="look-chip rarity">${combination}</span>` : ''}</div>`;
 }
 
+function renderBalance() {
+  get('credits').textContent = save.credits;
+  get('growth').textContent = '工坊 Lv.' + workshopStatus(save).level;
+}
+
 function render() {
   const run = save.run;
   heatHud = null;
@@ -107,7 +151,7 @@ function render() {
   get('ore-nav').hidden = phase !== 'ore';
   get('ore-position').textContent = '第 ' + (run.batch + 1) + ' 批 · ' + (run.selected + 1) + ' / ' + LOT_SIZE;
   get('steps').innerHTML = stepNames.map((label, n) => `<div class="step ${n === idx ? 'current' : n < idx ? 'past' : ''}" ${n === idx ? 'aria-current="step"' : ''}><i>0${n + 1}</i>${label}</div>`).join('');
-  get('credits').textContent = save.credits;
+  renderBalance();
   get('stage-code').textContent = 'STATION 0' + (idx + 1);
   get('stage-name').textContent = stationNames[idx];
   const status = { ore: '原石在台', reveal: '已开料', refine: '炉温实时', forge: '可自由落锤', fit: '试装预览', appraise: '成品已入藏', broken: '炉次结束' };
@@ -121,7 +165,7 @@ function render() {
   if (phase === 'ore') {
     const family = familyOf(ore.family), mineral = oreMaterialOf(ore);
     title('01 / SELECT A STONE', family.name, mineral.name + ' · ' + ORE_TIERS[ore.tier]);
-    readout.innerHTML = `<div class="ore-decision"><span>开料 <b>${ore.price} CR</b></span><span>价位稀质率 <b>${RARE_ODDS[ore.tier]}%</b></span></div>`;
+    readout.innerHTML = `<div class="ore-decision"><span>开料 <b>${ore.price} CR</b></span><span>价位稀质率 <b>${rareOdds(run, ore.tier)}%</b></span></div>`;
     actions.innerHTML = button('buy', '切开原石 · ' + ore.price + ' CR', { off: ore.price > save.credits }) +
       button('next-batch', run.batch === BATCHES - 1 ? '最后一批' : '换一批 · 免费', { kind: 'secondary', off: run.batch === BATCHES - 1 }) +
       `<span class="action-note">${ore.price > save.credits ? '余额不足，请选价格更低的原石' : '余额 ' + save.credits + ' → ' + (save.credits - ore.price) + ' CR · 切开后不能退料'}</span>`;
@@ -178,15 +222,17 @@ function render() {
   } else if (phase === 'fit') {
     title('04 / FITTINGS', '挑一套配件', '点选试装，拖动转刀。查看刀柄可近看材质和端箍。');
     readout.innerHTML = fit ? info('当前试装', fit.name, fit.parts) : info('锻打完成', MODELS[run.model], '已经保留 ' + run.hits + ' 锤的结果。');
+    const price = fittingPrice(run);
     actions.innerHTML = button('appraise', '确认装配 · 鉴定', { off: !fit }) +
-      button('refresh', run.refreshed ? '本炉已刷新' : '刷新一轮 · ' + REFRESH_PRICE + ' CR', { kind: 'secondary', off: run.refreshed || save.credits < REFRESH_PRICE });
+      button('refresh', run.refreshed ? '本炉已刷新' : '刷新一轮 · ' + price + ' CR', { kind: 'secondary', off: run.refreshed || save.credits < price });
   } else if (phase === 'appraise') {
     const record = run.record;
     title('05 / THE REVEAL', record.name, '第 ' + String(record.id).padStart(2, '0') + ' 号藏刀 · 已收入本地藏刀记录。');
     readout.innerHTML = info('成刀品质', `<span class="result-grade">${esc(record.grade)}</span> · ${esc(record.score)} 分`, record.refinement?.quality != null ? REFINEMENT_RESULTS[record.refinement.result].label + ' · 精炼质量 ' + record.refinement.quality : '', '+' + record.credit + ' CR') +
       lookChips(record) +
       `<div class="stat-list">${record.stats.map((n, i) => `<div class="stat"><span>${STAT_NAMES[i]}</span><span class="stat-track"><i style="width:${Number(n)}%"></i></span><b>${Number(n)}</b></div>`).join('')}</div>`;
-    actions.innerHTML = button('restart', '再开一炉');
+    actions.innerHTML = button('enter-tournament', '带此刀参赛') + button('restart', '再开一炉', { kind: 'secondary' }) +
+      '<span class="action-note">本次成刀 · 工坊 +10 XP</span>';
   } else {
     if (failedRefining) {
       title('02 / FURNACE LOST', '精炼失败', REFINEMENT_FAILURES[run.refinement.reason]);
@@ -242,10 +288,10 @@ function renderTray(run, fit) {
   if (phase === 'ore') {
     tray.innerHTML = `<div class="ore-grid">${offers(run).map((stone,n) => {
       const rock=familyOf(stone.family);
-      return `<button type="button" class="ore-card ${n===run.selected ? 'is-selected' : ''}" data-action="select-ore" data-id="${n}" aria-pressed="${n===run.selected}" aria-label="第${n+1}块 ${rock.name}，${stone.price}信用点，价位稀质率${RARE_ODDS[stone.tier]}%">
+      return `<button type="button" class="ore-card ${n===run.selected ? 'is-selected' : ''}" data-action="select-ore" data-id="${n}" aria-pressed="${n===run.selected}" aria-label="第${n+1}块 ${rock.name}，${stone.price}信用点，价位稀质率${rareOdds(run, stone.tier)}%">
         <span class="ore-card-top"><b>${stone.number}</b><span>${stone.window ? '已擦窗' : ORE_TIERS[stone.tier]}</span></span>
         <span class="ore-thumbnail"><img data-stone="${stone.id}" alt="${rock.name}实物缩略图"><i></i></span>
-        <b class="ore-card-name">${rock.name}</b><span class="ore-card-footer"><strong>${stone.price} CR</strong><span>${RARE_ODDS[stone.tier]}%</span></span>
+        <b class="ore-card-name">${rock.name}</b><span class="ore-card-footer"><strong>${stone.price} CR</strong><span>${rareOdds(run, stone.tier)}%</span></span>
       </button>`;
     }).join('')}</div>`;
     const batch=run.batch;
@@ -458,7 +504,10 @@ document.addEventListener('click', event => {
   if (['ore-prev', 'ore-next', 'next-batch', 'buy', 'select-ore', 'window-ore', 'tap-ore', 'inspect-light'].includes(action)) qa?.input();
   const run = save.run;
   let message;
-  if(action==='inspect-light' && run.phase==='ore' && id==='lamp'){
+  if (action === 'enter-tournament' && run.phase === 'appraise') {
+    enterTournament(run.record);
+    return;
+  } else if(action==='inspect-light' && run.phase==='ore' && id==='lamp'){
     inspectionMode=inspectionMode===id ? 'natural' : id;
     stage?.setInspection(inspectionMode);renderTools(run,offers(run)[run.selected]);return;
   } else if(action==='tap-ore' && run.phase==='ore'){
@@ -545,9 +594,14 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 window.addEventListener('blur', releaseHeat);
-window.addEventListener('pagehide', persist);
+window.addEventListener('pagehide', () => persist());
+window.addEventListener('storage', event => {
+  if (event.key === STORAGE_KEY && event.newValue !== savedText) {
+    showStorageNotice('存档已在另一标签页更新。请刷新此页，再继续保存。');
+  }
+});
 document.addEventListener('keydown', event => {
-  if (![' ', 'Enter'].includes(event.key) || event.repeat || get('vault').open) return;
+  if (inArena || ![' ', 'Enter'].includes(event.key) || event.repeat || get('vault').open || get('workshop-progress').open) return;
   if (event.target.id === 'heat-button') {
     event.preventDefault();
     charge();
@@ -588,12 +642,17 @@ get('sound').addEventListener('click', event => {
   const muted = sound.toggle();
   event.currentTarget.setAttribute('aria-pressed', muted);
   event.currentTarget.setAttribute('aria-label', muted ? '开启声音' : '静音');
+  tournament?.setMuted(muted);
 });
 get('collection').addEventListener('click', () => {
+  tournament?.pause();
+  ensureStage();
   const available = stage && !busy && !heatInput && !revealPending;
+  const eligible = new Set(eligibleBlades(save).map(blade => blade.id));
   const list = get('vault-list');
   list.innerHTML = save.collection.map((item, index) => {
-    const label = `<b>${esc(item.name)}</b><span>${esc(item.grade)} · ${Number(item.score)} 分</span>`;
+    const mastery = eligible.has(item.id) ? masteryOf(save, item) : null;
+    const label = `<b>${esc(item.name)}</b><span>${esc(item.grade)} · ${Number(item.score)} 分${mastery ? ' · ' + mastery.level : ''}</span>`;
     return available && item.skin?.levels && Object.hasOwn(MODELS, item.model) ?
       `<button type="button" class="brief vault-item" data-blade="${index}" aria-pressed="false">${label}</button>` :
       `<div class="brief">${label}</div>`;
@@ -608,6 +667,8 @@ get('vault-list').addEventListener('click', event => {
   const item = event.target.closest('[data-blade]');
   if (!item) return;
   const blade = save.collection[Number(item.dataset.blade)];
+  vaultBlade = blade;
+  get('vault-enter').hidden = !eligibleBlades(save).includes(blade);
   vaultView ??= { x: stage.turnX, y: stage.turnY, touched: stage.touched, previewSteel: stage.previewSteel, gripFocus: stage.gripFocus };
   const preview = get('vault-preview');
   const display = get('vault-stage');
@@ -616,7 +677,9 @@ get('vault-list').addEventListener('click', event => {
   view.item = item;
   preview.hidden = false;
   display.append(canvas);
-  get('vault-looks').innerHTML = lookChips(blade);
+  const mastery = eligibleBlades(save).includes(blade) ? masteryOf(save, blade) : null;
+  get('vault-looks').innerHTML = lookChips(blade) + (mastery ?
+    `<p class="vault-mastery">${mastery.level} · 有效出战 ${mastery.matches} 场 · ${mastery.project}专长 +${Math.round(mastery.bonus * 100)}%</p>` : '');
   for (const entry of get('vault-list').querySelectorAll('[data-blade]')) entry.setAttribute('aria-pressed', entry === item);
   stage.turnX = stage.turnY = 0;
   const pending = stage.sync({ ...blade, phase: 'appraise' }, blade.ore, FITS.find(fit => fit.id === blade.fit));
@@ -640,6 +703,7 @@ get('vault').addEventListener('close', () => {
   if (!vaultView) return;
   const view = vaultView;
   vaultView = null;
+  vaultBlade = null;
   stageBox.prepend(canvas);
   get('vault-preview').hidden = true;
   stage.resize();
@@ -653,6 +717,77 @@ get('vault').addEventListener('close', () => {
   renderGripFocus();
 });
 get('close-vault').addEventListener('click', () => get('vault').close());
+get('vault-enter').addEventListener('click', () => {
+  const blade = vaultBlade;
+  get('vault').close();
+  if (blade) enterTournament(blade);
+});
+
+get('growth').addEventListener('click', () => {
+  tournament?.pause();
+  const { level, xp, floor, next } = workshopStatus(save);
+  const perks = workshopPerks(level);
+  const cost = fittingPrice({ workshopLevel: level });
+  const rows = XP_THRESHOLDS.map((threshold, index) => {
+    const { discount, riskReduction, rareBonus } = workshopPerks(index + 1);
+    return `<li${level === index + 1 ? ' aria-current="true"' : ''}><b>Lv.${index + 1}</b><span>${threshold} XP</span><span>${Math.round(discount * 100)}% / ${Math.round(riskReduction * 100)}% / +${rareBonus}</span></li>`;
+  }).join('');
+  get('workshop-details').innerHTML = `
+    <div class="growth-summary"><b>Lv.${level}</b><span>${xp} XP${next ? ' / ' + next : ' · 已满级'}</span></div>
+    <progress aria-label="工坊等级经验" max="${next ? next - floor : 1}" value="${next ? xp - floor : 1}"></progress>
+    <p>每次成功成刀获得 10 XP。正式赛事和有效快赛也会积累工坊经验。</p>
+    <div class="growth-perks"><span>配件刷新 <b>${cost} CR</b></span><span>下一炉断率 <b>−${Math.round(perks.riskReduction * 100)}%</b></span><span>稀质率 <b>+${perks.rareBonus} 点</b></span></div>
+    <details><summary>十级工坊权益</summary><p>配件折扣 / 断率减免 / 稀质率加成，下炉生效。</p><ol>${rows}</ol></details>`;
+  get('workshop-progress').showModal();
+});
+get('close-growth').addEventListener('click', () => get('workshop-progress').close());
+
+function enterTournament(blade) {
+  preferredBlade = String(blade.id);
+  if (inArena) void route();
+  else location.hash = 'arena';
+}
+
+async function route() {
+  const arena = get('arena');
+  inArena = location.hash === '#arena';
+  get('forge').hidden = inArena;
+  arena.hidden = !inArena;
+  for (const link of document.querySelectorAll('[data-tab]')) {
+    if ((link.dataset.tab === 'arena') === inArena) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  }
+  window.scrollTo(0, 0);
+  renderBalance();
+  if (!inArena) {
+    tournament?.pause();
+    ensureStage();
+    stage?.resize();
+    render();
+    if (save.run.phase === 'refine' && save.run.refining?.step === 'cast') startHeat(false);
+    return;
+  }
+  if (heatInput) {
+    heatInput = null;
+    drawHeat();
+    persist();
+  }
+  if (!tournament) {
+    arena.innerHTML = '<p class="lab-notice" role="status">正在打开赛事大厅…</p>';
+    try {
+      tournamentLoad ??= import('./arena/view.js?v=1').then(({ mountTournament }) =>
+        mountTournament(arena, { getSave: () => save, commit: commitTournament,
+          muted: () => get('sound').getAttribute('aria-pressed') === 'true' }));
+      tournament = await tournamentLoad;
+    } catch {
+      tournamentLoad = null;
+      arena.innerHTML = '<p class="lab-notice">赛事大厅载入失败，请刷新页面后重试。</p>';
+      return;
+    }
+  }
+  if (inArena) tournament.open(preferredBlade);
+  preferredBlade = undefined;
+}
 
 function showError(error) {
   console.error('3D startup', error);
@@ -661,16 +796,20 @@ function showError(error) {
   say('请在支持 WebGL 的浏览器中打开', 'scar');
 }
 
-try {
-  const { run } = save;
-  const stones = run.phase === 'ore' ? offers(run) : [];
-  const initialModels = stones.length ? [stones[run.selected], ...stones].map(oreModelId) : [];
-  stage = new ForgeStage(canvas, initialModels);
-  if (qa) stage.observeFrame = qa.frame;
-  canvas.tabIndex = 0;
-} catch (error) {
-  showError(error);
+function ensureStage() {
+  if (stageAttempted) return;
+  stageAttempted = true;
+  try {
+    const { run } = save;
+    const stones = run.phase === 'ore' ? offers(run) : [];
+    const initialModels = stones.length ? [stones[run.selected], ...stones].map(oreModelId) : [];
+    stage = new ForgeStage(canvas, initialModels);
+    if (qa) stage.observeFrame = qa.frame;
+    canvas.tabIndex = 0;
+  } catch (error) {
+    showError(error);
+  }
 }
-render();
 qa?.install();
-if (save.run.phase === 'refine' && save.run.refining.step === 'cast') startHeat(false);
+window.addEventListener('hashchange', () => { void route(); });
+void route();

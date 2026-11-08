@@ -1,4 +1,7 @@
-export const STORAGE_KEY = 'bladelab.forge.1';
+import { workshopPerks, workshopStatus } from './workshop.js';
+
+export const STORAGE_KEY = 'bladelab.tournament.1';
+export const V18_STORAGE_KEYS = ['bladelab.ore-v5.preview.1', 'bladelab.forge.1'];
 export const MIN_PRICE = 14;
 export const REFRESH_PRICE = 12;
 export const WINDOW_PRICE = 3;
@@ -41,6 +44,8 @@ export const MODELS = {
 export const GRADES = ['普通', '良质', '稀质'];
 export const ORE_TIERS = ['工坊料', '精选料', '珍藏料'];
 export const RARE_ODDS = [5, 12, 22];
+export const rareOdds = (run, tier) => RARE_ODDS[tier] + workshopPerks(run.workshopLevel).rareBonus;
+export const fittingPrice = run => Math.floor(REFRESH_PRICE * (1 - workshopPerks(run.workshopLevel).discount));
 
 // Independent low-poly shapes: one base plus three subtle, authored silhouette variants.
 export const ORE_VARIANTS = ['原型', '横卧', '棱脊', '偏心'];
@@ -250,6 +255,7 @@ export function restart(save, seed) {
   if (!['appraise', 'broken'].includes(save.run.phase)) return false;
   save.credits = Math.max(MIN_PRICE, save.credits);
   save.run = freshRun(seed);
+  save.run.workshopLevel = workshopStatus(save).level;
   return true;
 }
 
@@ -265,7 +271,7 @@ export function offers(run) {
     const [low, high, ordinary, good] = priceBands[tier];
     const price = tier === 0 ? MIN_PRICE : low + Math.floor(roll() * (high - low + 1));
     const quality = roll();
-    const grade = quality < ordinary ? 0 : quality < good ? 1 : 2;
+    const grade = quality < ordinary ? 0 : quality < good - workshopPerks(run.workshopLevel).rareBonus / 100 ? 1 : 2;
     const [lo, hi] = purityBands[grade];
     const figure = roll();
     const purity = lo + Math.floor(roll() * (hi - lo + 1));
@@ -419,14 +425,15 @@ export function advanceHeat(run, seconds, blowing) {
 export function fractureRisk(run) {
   const next = run.hits + 1;
   if (next <= 6) return 0;
-  if (next >= 45) return .9;
+  const reduction = 1 - workshopPerks(run.workshopLevel).riskReduction;
+  if (next >= 45) return .9 * reduction;
   const hi = anchors.findIndex(([hit]) => hit >= next);
   const [a, pa] = anchors[hi - 1];
   const [b, pb] = anchors[hi];
   const baseline = pa + (pb - pa) * ((next - a) / (b - a));
   const stability = run.stability < 50 ? 1.25 : run.stability >= 70 ? .8 : 1;
   const blend = clamp((30 - next) / 12, 0, 1);
-  return Math.round(baseline * (1 + (stability - 1) * blend) * 1000) / 1000;
+  return Math.round(baseline * (1 + (stability - 1) * blend) * reduction * 1000) / 1000;
 }
 
 function chooseSlot(run, zone, type, roll) {
@@ -561,8 +568,9 @@ export function fitOptions(run) {
 
 export function refreshFittings(save) {
   const run = save.run;
-  if (run.phase !== 'fit' || run.refreshed || save.credits < REFRESH_PRICE) return false;
-  save.credits -= REFRESH_PRICE;
+  const price = fittingPrice(run);
+  if (run.phase !== 'fit' || run.refreshed || save.credits < price) return false;
+  save.credits -= price;
   run.refreshed = true;
   run.fit = null;
   return true;

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
-import { freshSave, buyOre, beginRefining, offers, MIN_PRICE } from '../forge.js';
+import { freshSave, buyOre, beginRefining, offers, MIN_PRICE, STORAGE_KEY } from '../forge.js';
 
 const root = process.env.QA_ORIGIN || 'http://127.0.0.1:8217/';
-const storageKey = process.env.QA_STORAGE_KEY || 'bladelab.forge.1';
+const storageKey = process.env.QA_STORAGE_KEY || STORAGE_KEY;
 const out = process.env.QA_OUTPUT || 'artifacts/refining';
 const quick = process.env.QA_QUICK === '1';
 await mkdir(out, { recursive: true });
