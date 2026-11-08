@@ -9,9 +9,12 @@
   <meta name="description" content="从一块未知的矿石，打出只属于这一炉的刀。">
   <link rel="icon" href="../../assets/mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css?v=16">
-  <script defer src="../../assets/vendor/three.bundle.js"></script>
-  <script defer src="../../assets/vendor/three.addons.js"></script>
-  <script type="module" src="app.js?v=17"></script>
+  <script defer src="assets/vendor/three.runtime.js?v=18" fetchpriority="high"></script>
+  <link rel="modulepreload" href="stage.js?v=18">
+  <link rel="modulepreload" href="forge.js?v=16">
+  <link rel="modulepreload" href="materials.js?v=17">
+  <link rel="modulepreload" href="blade-looks.js?v=17">
+  <script type="module" src="app.js?v=18"></script>
 </head>
 <body>
   <header class="header frame">

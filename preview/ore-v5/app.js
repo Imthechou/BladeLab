@@ -2,9 +2,9 @@ import {
   STORAGE_KEY, WINDOW_PRICE, LOT_SIZE, BATCHES, HEAT, REFRESH_PRICE, PHASES, GRADES, ORE_TIERS, RARE_ODDS, oreMaterialOf, MODELS, LOOKS, FITS, STAT_NAMES,
   freshSave, migrateSave, restart, offers, familyOf, stabilityOf, buyOre, beginRefining, advanceHeat, pourRefining, heatBand, refinementRank,
   REFINEMENT_RESULTS, REFINEMENT_FAILURES, fractureRisk, strike, finishForge,
-  fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection,
+  fitOptions, refreshFittings, appraise, signature, inspectOre, mineralHeritage, oreInspection, oreModelId,
 } from './forge.js?v=16';
-import { ForgeStage } from './stage.js?v=17';
+import { ForgeStage } from './stage.js?v=18';
 import { ForgeSound } from './sound.js?v=16';
 import { createQaSession } from './qa.js?v=16';
 
@@ -591,13 +591,18 @@ get('sound').addEventListener('click', event => {
 });
 get('collection').addEventListener('click', () => {
   const available = stage && !busy && !heatInput && !revealPending;
-  get('vault-list').innerHTML = save.collection.map((item, index) => {
+  const list = get('vault-list');
+  list.innerHTML = save.collection.map((item, index) => {
     const label = `<b>${esc(item.name)}</b><span>${esc(item.grade)} · ${Number(item.score)} 分</span>`;
     return available && item.skin?.levels && Object.hasOwn(MODELS, item.model) ?
       `<button type="button" class="brief vault-item" data-blade="${index}" aria-pressed="false">${label}</button>` :
       `<div class="brief">${label}</div>`;
   }).join('') || '<div class="brief"><span>完成第一把刀后，成品会出现在这里。</span></div>';
   get('vault').showModal();
+  const first = list.querySelector('[data-blade]');
+  if (first && !navigator.connection?.saveData) {
+    stage.load(save.collection[Number(first.dataset.blade)].model, 'low').catch(() => {});
+  }
 });
 get('vault-list').addEventListener('click', event => {
   const item = event.target.closest('[data-blade]');
@@ -657,9 +662,11 @@ function showError(error) {
 }
 
 try {
-  stage = new ForgeStage(canvas);
+  const { run } = save;
+  const stones = run.phase === 'ore' ? offers(run) : [];
+  const initialModels = stones.length ? [stones[run.selected], ...stones].map(oreModelId) : [];
+  stage = new ForgeStage(canvas, initialModels);
   if (qa) stage.observeFrame = qa.frame;
-  stage.prepare().catch(showError);
   canvas.tabIndex = 0;
 } catch (error) {
   showError(error);
